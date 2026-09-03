@@ -10,10 +10,10 @@
   --c-surface-raised: #edeeef;
   --c-border: #e5e5e5;
 
-  /* 텍스트 · 액션 */
-  --c-text: #2d2d2d;
+  /* 텍스트 — 본문·라벨·메타 등 일반 텍스트는 전부 이 둘만 씁니다. */
+  --c-text: #2d2d2d; /* 본문(text-primary) */
   --c-text-strong: #000000;
-  --c-text-muted: #71717a;
+  --c-text-muted: #71717a; /* 보조·메타·라벨(text-secondary) */
   --c-on-dark: #fafafa;
 
   /* 형광펜 — 유일한 채도 높은 색. 강조 이외에는 쓰지 않습니다. */
