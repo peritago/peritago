@@ -22,7 +22,6 @@ defineEmits(['pick'])
       @click="$emit('pick', candidate)"
     >
       <span class="chip__term">{{ candidate.term }}</span>
-      <span class="chip__domain">{{ candidate.domain }}</span>
     </button>
   </div>
 </template>
@@ -79,11 +78,5 @@ defineEmits(['pick'])
 
 .chip--fresh .chip__term {
   font-weight: 800;
-}
-
-.chip__domain {
-  font-weight: 500;
-  font-size: 14px;
-  opacity: 0.75;
 }
 </style>

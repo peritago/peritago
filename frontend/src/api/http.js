@@ -21,6 +21,8 @@ const MESSAGES = {
   PERSONA_NOT_FOUND: '설정된 페르소나가 없습니다.',
   GLOSSARY_TERM_DUPLICATED: '이미 등록된 용어입니다.',
   VALIDATION_ERROR: '입력값을 확인해 주세요.',
+  SESSION_NOT_FOUND: '존재하지 않는 채팅입니다.',
+  TRANSLATION_FAILED: '설명을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.',
 }
 
 export class ApiError extends Error {
@@ -104,17 +106,20 @@ async function reissue() {
   return reissuing
 }
 
-export async function request(path, { method = 'GET', body, auth = true, retry = true } = {}) {
+export async function request(
+  path,
+  { method = 'GET', body, auth = true, retry = true, signal } = {},
+) {
   const headers = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (auth) Object.assign(headers, authHeaders())
 
-  const init = { method, headers }
+  const init = { method, headers, signal }
   if (body !== undefined) init.body = JSON.stringify(body)
   const response = await fetch(path, init)
 
   if (response.status === 401 && auth && retry) {
-    if (await reissue()) return request(path, { method, body, auth, retry: false })
+    if (await reissue()) return request(path, { method, body, auth, retry: false, signal })
   }
 
   // 204 등 본문 없는 응답

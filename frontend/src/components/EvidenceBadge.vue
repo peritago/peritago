@@ -3,7 +3,6 @@ import { computed } from 'vue'
 
 const props = defineProps({
   type: { type: String, default: null }, // glossary | wiki | general_knowledge
-  cached: { type: Boolean, default: false },
   size: { type: String, default: 'md' }, // md | sm
 })
 
@@ -22,10 +21,6 @@ const variant = computed(() => VARIANTS[props.type] ?? null)
     <span class="badge" :class="[`badge--${type}`, `badge--${size}`]">
       <i class="ti" :class="variant.icon" aria-hidden="true"></i>
       <span>{{ variant.label }}</span>
-    </span>
-    <span v-if="cached" class="badge badge--cached" :class="`badge--${size}`">
-      <i class="ti ti-bolt" aria-hidden="true"></i>
-      <span>캐시 적중</span>
     </span>
   </span>
 </template>
@@ -73,12 +68,6 @@ const variant = computed(() => VARIANTS[props.type] ?? null)
 .badge--general_knowledge {
   background: transparent;
   font-weight: 500;
-  color: var(--c-text-muted);
-}
-
-.badge--cached {
-  background: var(--c-surface-raised);
-  font-weight: 600;
   color: var(--c-text-muted);
 }
 </style>

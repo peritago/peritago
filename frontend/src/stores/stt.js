@@ -3,7 +3,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { createDefaultSource } from '@/composables/sttSources'
 import { useMicMeter } from '@/composables/useMicMeter'
 import { usePersonaStore } from './persona'
-import { useGlossaryStore } from './glossary'
+import { api } from '@/api/http'
 
 /** UC-12 슬라이딩 윈도우 크기. 확정 시안이 6문장이라 6으로 둡니다. */
 const WINDOW_SIZE = 6
@@ -13,10 +13,12 @@ const WINDOW_SIZE = 6
  *
  * 스토어에 둔 이유: 상단 고정 상태 패널, 접힌 레일, 콘솔 본문, 그리고 질의 입력창이
  * 모두 같은 녹음 상태와 같은 윈도우를 봐야 하기 때문입니다.
+ *
+ * UC-13 감지는 서버가 합니다(F-11). 확정 문장을 POST /api/context/messages로 보내면
+ * 최근 5문장 맥락과 함께 은어 사전 대조 결과(detectedTerms)를 돌려줍니다.
  */
 export const useSttStore = defineStore('stt', () => {
   const persona = usePersonaStore()
-  const glossary = useGlossaryStore()
   const meter = useMicMeter()
 
   /** idle · requesting · recording · stopping · error */
@@ -31,6 +33,11 @@ export const useSttStore = defineStore('stt', () => {
   const elapsedMs = ref(0)
   const consentGiven = ref(false) // UC-10 최초 1회 규칙
   const sessionNumber = ref(4)
+
+  /** 현재 채팅(서버 세션) id. chat 스토어가 세션을 만들거나 전환할 때 설정합니다. */
+  const sessionId = ref(null)
+  /** 서버가 감지해 돌려준 사내 은어 후보 — 용어 기준으로 최신 것만 유지합니다. */
+  const detectedByTerm = ref(new Map())
 
   const source = shallowRef(null)
   const mediaStream = shallowRef(null)
@@ -66,18 +73,20 @@ export const useSttStore = defineStore('stt', () => {
 
   const timecode = computed(() => formatTimecode(elapsedMs.value))
 
-  /** UC-04 대안 흐름: 수동 질의에 자동으로 실려가는 맥락. */
-  const contextWindow = computed(() => sentences.value.map((s) => s.text).join(' '))
-
   /**
-   * UC-13. 감지 기준은 "Glossary에 있는가"가 아니라 "내 페르소나 도메인 밖인가"입니다.
+   * UC-13. 감지는 서버가 은어 사전과 문자열 대조로 수행합니다(F-11).
    * 후보를 띄우기만 하고 결과는 생성하지 않습니다 — 클릭이 있어야 UC-04가 돕니다.
+   * 최근 감지 순으로 정렬해 가장 최근 것을 맨 앞에 둡니다.
    */
   const candidates = computed(() =>
-    glossary.detect(sentences.value, persona.activeDomains).slice(0, 6),
+    [...detectedByTerm.value.values()].sort((a, b) => b.sentenceId - a.sentenceId).slice(0, 6),
   )
 
   const candidateTerms = computed(() => candidates.value.map((c) => c.term))
+
+  function setSessionId(id) {
+    sessionId.value = id
+  }
 
   async function start({ engine } = {}) {
     if (status.value === 'recording' || status.value === 'requesting') return
@@ -159,15 +168,48 @@ export const useSttStore = defineStore('stt', () => {
     const clean = String(text ?? '').trim()
     if (!clean) return
     seq += 1
+    const sentenceId = seq
     sentences.value.push({
-      id: seq,
+      id: sentenceId,
       text: clean,
       at: at ?? formatTimecode(Date.now() - startedAt),
     })
     // 윈도우를 벗어난 문장은 화면에서 제거합니다.
-    if (sentences.value.length > WINDOW_SIZE)
-      sentences.value.splice(0, sentences.value.length - WINDOW_SIZE)
+    if (sentences.value.length > WINDOW_SIZE) {
+      const dropped = sentences.value.splice(0, sentences.value.length - WINDOW_SIZE)
+      pruneDetected(dropped.map((s) => s.id))
+    }
     interimText.value = ''
+    syncContext(sentenceId, clean)
+  }
+
+  /** 확정 문장을 서버 맥락에 적재하고, 이번 문장에서 새로 감지된 은어를 후보에 더합니다. */
+  async function syncContext(sentenceId, text) {
+    if (!sessionId.value) return
+    try {
+      const result = await api.post('/api/context/messages', {
+        sessionId: sessionId.value,
+        sentences: [text],
+      })
+      for (const term of result?.detectedTerms ?? []) {
+        detectedByTerm.value.set(term.term, {
+          term: term.term,
+          glossaryId: term.glossaryId,
+          officialDefinition: term.officialDefinition,
+          sentenceId,
+        })
+      }
+    } catch {
+      // 감지 실패는 조용히 무시합니다 — 문장 적재 UX를 막지 않습니다.
+    }
+  }
+
+  /** 윈도우를 벗어난 문장에서만 나온 후보는 함께 내립니다. */
+  function pruneDetected(droppedSentenceIds) {
+    const dropped = new Set(droppedSentenceIds)
+    for (const [term, entry] of detectedByTerm.value) {
+      if (dropped.has(entry.sentenceId)) detectedByTerm.value.delete(term)
+    }
   }
 
   function startTimer() {
@@ -188,6 +230,7 @@ export const useSttStore = defineStore('stt', () => {
     sentences.value = []
     interimText.value = ''
     elapsedMs.value = 0
+    detectedByTerm.value.clear()
   }
 
   function grantConsent() {
@@ -215,12 +258,12 @@ export const useSttStore = defineStore('stt', () => {
     isBusy,
     consentGiven,
     sessionNumber,
-    contextWindow,
     candidates,
     candidateTerms,
     waveformBars: meter.bars,
     micLevel: meter.level,
     windowSize: WINDOW_SIZE,
+    setSessionId,
     start,
     stop,
     toggle,
