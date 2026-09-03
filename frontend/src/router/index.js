@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePersonaStore } from '@/stores/persona'
+import { onAuthExpired } from '@/api/http'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -67,6 +68,11 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+// 재발급도 실패해 토큰이 완전히 죽었을 때: 지금 보고 있는 화면과 무관하게 즉시 로그인으로 보냅니다.
+onAuthExpired(() => {
+  if (!router.currentRoute.value.meta.public) router.push({ name: 'login' })
 })
 
 export default router
