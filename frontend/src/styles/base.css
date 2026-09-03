@@ -1,0 +1,212 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* 포커스는 절대 지우지 않습니다 (가이드 7장). */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---------- 공용 프리미티브 ---------- */
+
+.u-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--c-text-muted);
+}
+
+.u-meta {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--c-text-muted);
+}
+
+.u-note {
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--c-text-muted);
+}
+
+.u-divider {
+  height: 1px;
+  background: var(--c-border);
+}
+
+/* 형광펜 — 용어·짧은 구절에만. 문장 전체에는 쓰지 않습니다. */
+.u-highlight {
+  background: var(--c-highlight);
+  color: var(--c-on-highlight);
+  font-weight: 700;
+  padding: 0 3px;
+}
+
+.u-highlight--lg {
+  padding: 0 4px;
+  font-weight: 800;
+}
+
+/* 버튼 3종 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: var(--r-control);
+  border: 1px solid transparent;
+  font-weight: 800;
+  font-size: 14px;
+  white-space: nowrap;
+  transition:
+    background-color var(--t-fast),
+    color var(--t-fast),
+    border-color var(--t-fast);
+}
+
+.btn--primary {
+  background: var(--c-text);
+  color: var(--c-on-dark);
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--c-text-strong);
+}
+
+.btn--surface {
+  background: var(--c-surface);
+  border-color: var(--c-border);
+  color: var(--c-text);
+}
+.btn--surface:hover:not(:disabled) {
+  background: var(--c-text-strong);
+  border-color: var(--c-text-strong);
+  color: var(--c-on-dark);
+}
+
+.btn--ghost {
+  border-color: var(--c-border);
+  color: var(--c-text);
+  font-weight: 600;
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--c-surface-raised);
+  border-color: var(--c-text);
+}
+
+.btn:disabled {
+  background: var(--c-surface);
+  border-color: var(--c-border);
+  color: var(--c-text-muted);
+  cursor: not-allowed;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+/* 입력 — 라벨은 placeholder로 대체하지 않습니다 (가이드 5장). */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field__label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.field__label small {
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--c-text-muted);
+}
+
+.field__control,
+.input {
+  width: 100%;
+  height: 46px;
+  padding: 0 16px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-control);
+  font-size: 16px;
+}
+
+textarea.input {
+  height: auto;
+  padding: 13px 16px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.input::placeholder {
+  color: var(--c-text-muted);
+}
+
+.field__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--c-text-muted);
+}
+
+.field__error {
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+/* 사용자가 모션 감소를 선택하면 전부 정지 (가이드 7장). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
