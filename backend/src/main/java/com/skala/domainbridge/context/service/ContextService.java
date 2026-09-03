@@ -13,8 +13,9 @@ import java.util.List;
  * 키를 사용자가 아니라 세션 기준(context:{sessionId})으로 잡는 이유:
  * 한 사용자가 여러 회의를 병행해도 맥락이 섞이지 않게 하기 위함.
  *
- * REST로 노출하지 않는 내부 계층이다. STT 문장 적재(F-15)는 도전 기능이라
- * MVP에서는 append()가 호출되지 않으며, snapshot()은 null을 반환한다.
+ * 적재 경로는 ContextController(POST /api/context/messages)이며, 프론트의 STT(F-15)가
+ * 확정 문장을 보낼 때마다 호출된다. 문장이 한 건도 없으면 snapshot()은 null을 반환하고,
+ * query.context_snapshot 도 NULL 로 남는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -25,6 +26,12 @@ public class ContextService {
     private static final Duration TTL = Duration.ofHours(1);
 
     private final RedisTemplate<String, String> redisTemplate;
+
+    /** STT 전사 문장 여러 건을 순서대로 적재한다. */
+    public List<String> appendAll(Long sessionId, List<String> sentences) {
+        sentences.forEach(sentence -> append(sessionId, sentence));
+        return window(sessionId);
+    }
 
     /** STT 전사 문장 1건 적재. 윈도우를 최근 WINDOW_SIZE 문장으로 유지하고 TTL을 갱신한다. */
     public void append(Long sessionId, String sentence) {
