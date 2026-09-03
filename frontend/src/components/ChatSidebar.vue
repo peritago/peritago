@@ -96,7 +96,7 @@ defineEmits(['create', 'select'])
 
 .item:hover {
   background: var(--c-surface-raised);
-  border-color: var(--c-text);
+  border-color: var(--c-border-hover);
   color: var(--c-text);
 }
 

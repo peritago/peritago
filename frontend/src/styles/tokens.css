@@ -9,6 +9,7 @@
   --c-surface: #f4f5f6;
   --c-surface-raised: #edeeef;
   --c-border: #e5e5e5;
+  --c-border-hover: #9ca3af;
 
   /* 텍스트 — 본문·라벨·메타 등 일반 텍스트는 전부 이 둘만 씁니다. */
   --c-text: #2d2d2d; /* 본문(text-primary) */
@@ -50,6 +51,6 @@
   --w-console: 380px;
   --w-console-rail: 36px;
 
-  --focus-ring: 3px solid var(--c-text);
+  --focus-ring: 3px solid var(--c-accent);
   --t-fast: 0.14s ease;
 }
