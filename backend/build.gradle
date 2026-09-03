@@ -56,3 +56,19 @@ dependencyManagement {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// bootRun 실행 시 backend/.env 를 환경변수로 주입한다 (파일이 없으면 조용히 건너뜀).
+// .env 는 .gitignore 대상이며, 값은 Gradle 이 읽어 프로세스 환경에만 전달한다.
+tasks.named('bootRun') {
+	def envFile = file('.env')
+	if (envFile.exists()) {
+		envFile.readLines('UTF-8').each { line ->
+			def trimmed = line.trim()
+			if (!trimmed || trimmed.startsWith('#') || !trimmed.contains('=')) return
+			def idx = trimmed.indexOf('=')
+			def key = trimmed.substring(0, idx).trim()
+			def value = trimmed.substring(idx + 1).trim()
+			if (key && value) environment key, value
+		}
+	}
+}

@@ -11,7 +11,7 @@ import java.util.Optional;
  * 항상 미검색으로 응답해 GENERAL 폴백 경로가 동작하는지 확인할 수 있게 한다.
  */
 @Component
-@ConditionalOnProperty(name = "peritago.translate.mock", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "peritago.translate.mock.wiki", havingValue = "true", matchIfMissing = true)
 public class MockWikiSearcher implements WikiSearcher {
 
     @Override

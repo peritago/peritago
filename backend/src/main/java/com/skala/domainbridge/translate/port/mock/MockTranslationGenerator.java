@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  * 인터페이스가 동일하므로 교체 시 TranslateService는 수정되지 않는다.
  */
 @Component
-@ConditionalOnProperty(name = "peritago.translate.mock", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = "peritago.translate.mock.generator", havingValue = "true", matchIfMissing = true)
 public class MockTranslationGenerator implements TranslationGenerator {
 
     @Override
