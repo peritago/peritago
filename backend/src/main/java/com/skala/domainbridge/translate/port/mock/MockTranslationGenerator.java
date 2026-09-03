@@ -13,6 +13,11 @@ import org.springframework.stereotype.Component;
 public class MockTranslationGenerator implements TranslationGenerator {
 
     @Override
+    public String promptVersion() {
+        return "mock";
+    }
+
+    @Override
     public Result generate(Command command) {
         String official = switch (command.sourceType()) {
             case GLOSSARY, WIKI -> command.evidence();

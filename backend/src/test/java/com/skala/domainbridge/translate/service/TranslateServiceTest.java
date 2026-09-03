@@ -13,7 +13,7 @@ import com.skala.domainbridge.translate.entity.ChatSession;
 import com.skala.domainbridge.translate.entity.Query;
 import com.skala.domainbridge.translate.entity.SourceType;
 import com.skala.domainbridge.translate.port.TranslationGenerator;
-import com.skala.domainbridge.translate.port.WikiSearcher;
+import com.skala.domainbridge.translate.wiki.WikiEvidenceFinder;
 import com.skala.domainbridge.translate.repository.AiResponseRepository;
 import com.skala.domainbridge.translate.repository.ChatSessionRepository;
 import com.skala.domainbridge.translate.repository.QueryRepository;
@@ -36,6 +36,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,7 +55,7 @@ class TranslateServiceTest {
     @Mock private PersonaService personaService;
     @Mock private ContextService contextService;
     @Mock private GlossaryMatcher glossaryMatcher;
-    @Mock private WikiSearcher wikiSearcher;
+    @Mock private WikiEvidenceFinder wikiEvidenceFinder;
     @Mock private TranslationGenerator translationGenerator;
     @Mock private TranslationCache translationCache;
 
@@ -74,15 +75,16 @@ class TranslateServiceTest {
         assertThat(result.sourceType()).isEqualTo(SourceType.GLOSSARY);
         assertThat(result.sourceRef()).isEqualTo("7");
         assertThat(result.outsideCompanyStandard()).isFalse();
-        verify(wikiSearcher, never()).searchTop(any());
+        verify(wikiEvidenceFinder, never()).find(any(), any());
     }
 
     @Test
     void Glossary에_없으면_위키를_조회한다() {
         기본_스텁();
         when(glossaryMatcher.match(TERM)).thenReturn(Optional.empty());
-        when(wikiSearcher.searchTop(TERM)).thenReturn(Optional.of(
-                new WikiSearcher.WikiMatch(3L, "조직 운영 규정", "TF는 한시 조직이다", "https://wiki/3")));
+        when(wikiEvidenceFinder.find(eq(TERM), any())).thenReturn(Optional.of(
+                new WikiEvidenceFinder.WikiEvidence("TF는 한시 조직이다", "https://wiki/3", false,
+                        List.of(new WikiEvidenceFinder.AnalogyCandidate("영업", "영업 파이프라인은 다섯 단계다", 0.52)))));
         when(translationGenerator.generate(any())).thenReturn(생성결과("위키 발췌", "쉬운 설명"));
 
         TranslateResponseDto result = translateService.translate(USER_ID, 요청());
@@ -137,8 +139,8 @@ class TranslateServiceTest {
         assertThat(result.officialDefinition()).isEqualTo("등록된 공식 정의");
         assertThat(result.personalizedExplanation()).contains("페르소나가 설정되지 않아");
         verify(translationGenerator, never()).generate(any());
-        verify(translationCache, never()).find(any());
-        verify(wikiSearcher, never()).searchTop(any());
+        verify(translationCache, never()).find(any(), any());
+        verify(wikiEvidenceFinder, never()).find(any(), any());
     }
 
     @Test
@@ -161,14 +163,14 @@ class TranslateServiceTest {
         기본_스텁();
         근거_없음();
         when(translationCache.isCacheable(any())).thenReturn(true);
-        when(translationCache.find(any()))
+        when(translationCache.find(any(), any()))
                 .thenReturn(Optional.of(생성결과("캐시된 정의", "캐시된 설명")));
 
         TranslateResponseDto result = translateService.translate(USER_ID, 요청());
 
         assertThat(result.officialDefinition()).isEqualTo("캐시된 정의");
         verify(translationGenerator, never()).generate(any());
-        verify(translationCache, never()).put(any(), any());
+        verify(translationCache, never()).put(any(), any(), any());
     }
 
     @Test
@@ -181,8 +183,8 @@ class TranslateServiceTest {
 
         translateService.translate(USER_ID, 요청());
 
-        verify(translationCache, never()).find(any());
-        verify(translationCache, never()).put(any(), any());
+        verify(translationCache, never()).find(any(), any());
+        verify(translationCache, never()).put(any(), any(), any());
         verify(translationGenerator).generate(any());
     }
 
@@ -200,6 +202,37 @@ class TranslateServiceTest {
                         .isEqualTo(ErrorCode.TRANSLATION_FAILED));
 
         verify(aiResponseRepository, never()).save(any());
+    }
+
+    @Test
+    void 위키_조회가_실패하면_번역을_막지_않고_GENERAL로_떨어진다() {
+        기본_스텁();
+        when(glossaryMatcher.match(TERM)).thenReturn(Optional.empty());
+        when(wikiEvidenceFinder.find(eq(TERM), any())).thenThrow(new RuntimeException("벡터 스토어 장애"));
+        when(translationGenerator.generate(any())).thenReturn(생성결과("일반적인 의미", "쉬운 설명"));
+
+        TranslateResponseDto result = translateService.translate(USER_ID, 요청());
+
+        assertThat(result.sourceType()).isEqualTo(SourceType.GENERAL);
+
+        // 조회 실패는 "근거 없음"과 구분되어야 한다 - 안내 문구가 달라진다.
+        ArgumentCaptor<TranslationGenerator.Command> captor =
+                ArgumentCaptor.forClass(TranslationGenerator.Command.class);
+        verify(translationGenerator).generate(captor.capture());
+        assertThat(captor.getValue().evidenceLookupFailed()).isTrue();
+    }
+
+    @Test
+    void 조회_실패한_응답은_캐싱하지_않는다() {
+        기본_스텁();
+        when(glossaryMatcher.match(TERM)).thenReturn(Optional.empty());
+        when(wikiEvidenceFinder.find(eq(TERM), any())).thenThrow(new RuntimeException("벡터 스토어 장애"));
+        when(translationCache.isCacheable(any())).thenReturn(false);
+        when(translationGenerator.generate(any())).thenReturn(생성결과("일반적인 의미", "쉬운 설명"));
+
+        translateService.translate(USER_ID, 요청());
+
+        verify(translationCache, never()).put(any(), any(), any());
     }
 
     @Test
@@ -254,7 +287,7 @@ class TranslateServiceTest {
     /** Glossary·위키 모두 미검색 상태로 만든다. */
     private void 근거_없음() {
         when(glossaryMatcher.match(TERM)).thenReturn(Optional.empty());
-        when(wikiSearcher.searchTop(TERM)).thenReturn(Optional.empty());
+        when(wikiEvidenceFinder.find(eq(TERM), any())).thenReturn(Optional.empty());
     }
 
     private TranslationGenerator.Result 생성결과(String official, String personalized) {

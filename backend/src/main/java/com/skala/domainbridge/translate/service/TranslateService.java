@@ -3,6 +3,7 @@ package com.skala.domainbridge.translate.service;
 import com.skala.domainbridge.common.exception.CustomException;
 import com.skala.domainbridge.common.exception.ErrorCode;
 import com.skala.domainbridge.context.service.ContextService;
+import com.skala.domainbridge.glossary.service.GlossaryMatchResult;
 import com.skala.domainbridge.glossary.service.GlossaryMatcher;
 import com.skala.domainbridge.translate.cache.TranslationCache;
 import com.skala.domainbridge.translate.dto.request.TranslateRequestDto;
@@ -12,7 +13,7 @@ import com.skala.domainbridge.translate.entity.ChatSession;
 import com.skala.domainbridge.translate.entity.Query;
 import com.skala.domainbridge.translate.entity.SourceType;
 import com.skala.domainbridge.translate.port.TranslationGenerator;
-import com.skala.domainbridge.translate.port.WikiSearcher;
+import com.skala.domainbridge.translate.wiki.WikiEvidenceFinder;
 import com.skala.domainbridge.translate.repository.AiResponseRepository;
 import com.skala.domainbridge.translate.repository.ChatSessionRepository;
 import com.skala.domainbridge.translate.repository.QueryRepository;
@@ -60,7 +61,7 @@ public class TranslateService {
     private final PersonaService personaService;
     private final ContextService contextService;
     private final GlossaryMatcher glossaryMatcher;
-    private final WikiSearcher wikiSearcher;
+    private final WikiEvidenceFinder wikiEvidenceFinder;
     private final TranslationGenerator translationGenerator;
     private final TranslationCache translationCache;
 
@@ -88,7 +89,7 @@ public class TranslateService {
         session.touch();
 
         UserPersonaResponseDto persona = personaService.findPersona(userId);
-        Evidence evidence = resolveEvidence(term);
+        Evidence evidence = resolveEvidence(term, persona.domainTags());
 
         TranslationGenerator.Result generated = generate(term, contextSnapshot, evidence, persona);
 
@@ -169,11 +170,15 @@ public class TranslateService {
                 persona.personaDescription(),
                 persona.officialDefLength(),
                 persona.personalizedExpLength(),
-                persona.exists());
+                persona.exists(),
+                evidence.keywordOnlyMatch(),
+                evidence.analogies(),
+                evidence.lookupFailed());
 
         boolean cacheable = translationCache.isCacheable(command);
         if (cacheable) {
-            Optional<TranslationGenerator.Result> cached = translationCache.find(command);
+            Optional<TranslationGenerator.Result> cached =
+                    translationCache.find(command, translationGenerator.promptVersion());
             if (cached.isPresent()) {
                 log.debug("번역 캐시 적중. term={}", term);
                 return cached.get();
@@ -189,7 +194,7 @@ public class TranslateService {
         }
 
         if (cacheable) {
-            translationCache.put(command, result);
+            translationCache.put(command, translationGenerator.promptVersion(), result);
         }
         return result;
     }
@@ -197,20 +202,41 @@ public class TranslateService {
     /**
      * 3단계 폴백. Glossary에 걸리면 위키를 조회하지 않고, 위키에도 없으면 일반 지식으로 내려간다.
      */
-    private Evidence resolveEvidence(String term) {
-        return glossaryMatcher.match(term)
-                .map(match -> new Evidence(
-                        SourceType.GLOSSARY,
-                        match.officialDefinition(),
-                        String.valueOf(match.glossaryId())))
-                .or(() -> wikiSearcher.searchTop(term)
-                        .map(match -> new Evidence(
-                                SourceType.WIKI,
-                                match.excerpt(),
-                                match.sourceUrl())))
-                .orElseGet(() -> new Evidence(SourceType.GENERAL, null, null));
+    private Evidence resolveEvidence(String term, List<String> userDomains) {
+        Optional<GlossaryMatchResult> glossary = glossaryMatcher.match(term);
+        if (glossary.isPresent()) {
+            GlossaryMatchResult match = glossary.get();
+            return new Evidence(SourceType.GLOSSARY, match.officialDefinition(),
+                    String.valueOf(match.glossaryId()), false, List.of(), false);
+        }
+
+        try {
+            return wikiEvidenceFinder.find(term, userDomains)
+                    .map(wiki -> new Evidence(
+                            SourceType.WIKI,
+                            wiki.officialSource(),
+                            wiki.officialSourceUrl(),
+                            wiki.keywordOnlyMatch(),
+                            wiki.analogies().stream()
+                                    .map(a -> new TranslationGenerator.Analogy(a.domain(), a.content()))
+                                    .toList(),
+                            false))
+                    .orElseGet(() -> new Evidence(SourceType.GENERAL, null, null, false, List.of(), false));
+        } catch (Exception e) {
+            // 조회 실패를 "근거 없음"으로 뭉뚱그리면 사용자에게 "등록된 정의가 없다"고 사실과 다르게 안내한다.
+            log.warn("위키 조회 실패 - 일반 지식으로 계속 진행합니다. term={}", term, e);
+            return new Evidence(SourceType.GENERAL, null, null, false, List.of(), true);
+        }
     }
 
-    /** 폴백으로 확보한 근거. GENERAL이면 근거 원문과 출처가 없다. */
-    private record Evidence(SourceType sourceType, String officialDefinition, String sourceRef) {}
+    /**
+     * 폴백으로 확보한 근거. GENERAL이면 근거 원문과 출처가 없다.
+     *
+     * @param keywordOnlyMatch 위키 근거가 키워드로만 매치된 경우 - LLM 이 의미적 관련성을 재확인해야 한다.
+     * @param analogies 개인화 설명에 쓸 비유 근거. Glossary/GENERAL 경로에서는 비어 있다.
+     * @param lookupFailed 사내 자료 조회 자체가 실패한 경우.
+     */
+    private record Evidence(SourceType sourceType, String officialDefinition, String sourceRef,
+                            boolean keywordOnlyMatch, List<TranslationGenerator.Analogy> analogies,
+                            boolean lookupFailed) {}
 }

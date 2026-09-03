@@ -33,7 +33,7 @@ import java.util.concurrent.TimeoutException;
 public class OpenAiTranslationGenerator implements TranslationGenerator {
 
     /** 프롬프트를 고칠 때마다 올린다. ai_response.prompt_version 에 기록되어 품질 추적에 쓰인다. */
-    private static final String PROMPT_VERSION = "v2";
+    private static final String PROMPT_VERSION = "v3";
 
     /**
      * 사내 근거가 없을 때 공식 정의가 반드시 이 문장으로 시작해야 한다.
@@ -65,14 +65,35 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
 
             [공식 정의] officialDefinition
             - 근거(EVIDENCE)가 주어지면 그 내용만을 토대로 작성하고, 근거에 없는 사실을 덧붙이지 마십시오.
-            - EVIDENCE_TYPE 이 "사내 근거 없음"이면, officialDefinition 은 반드시 아래 문장으로 시작해야 합니다.
-              "사내 위키와 용어집에 등록된 정의가 없어 일반적인 의미로 안내합니다."
-              이 문장을 그대로 쓴 뒤 한 칸 띄고 일반적인 의미를 이어서 설명하십시오.
-              문구를 바꾸거나 생략하지 마십시오. 이것은 사용자가 사내 공식 기준으로 오해하는 것을 막기 위한 필수 고지입니다.
             - 확실하지 않으면 아는 척하지 말고 모른다고 쓰십시오.
+
+            [EVIDENCE_TYPE 별 처리] 아래 세 경우는 서로 배타적입니다. 해당하는 항목의 지시만 따르고,
+            다른 항목에 지정된 문구를 가져다 쓰지 마십시오.
+
+            (1) "사내 은어 사전"
+                관리자가 확정한 공식 값입니다. 그대로 신뢰하고 근거를 토대로 작성하십시오.
+
+            (2) "사내 위키 문서 발췌"
+                검색으로 찾아온 것이라 질문과 맞지 않을 수 있습니다. 근거가 이 용어를 설명하는 내용이
+                맞는지 먼저 판단하십시오.
+                - 맞으면 그 내용을 토대로 작성하십시오. 이 경우 고지 문구를 붙이지 마십시오.
+                - 명백히 다른 내용이면 근거를 버리고 officialDefinition 을 다음 문장으로 시작하십시오.
+                  "사내 위키에서 이 용어에 대한 설명을 찾지 못했습니다."
+                EVIDENCE_KEYWORD_ONLY 가 true 이면 그 근거는 의미가 아니라 글자 겹침으로 찾아온
+                것이므로 특히 신중하게 판단하십시오.
+
+            (3) "사내 근거 없음"
+                사용자 메시지에 REQUIRED_PREFIX 가 주어집니다. officialDefinition 을 그 문장으로 그대로
+                시작한 뒤 한 칸 띄고 일반적인 의미를 이어서 설명하십시오. 문구를 바꾸거나 생략하지 마십시오.
+                사용자가 사내 공식 기준으로 오해하는 것을 막기 위한 필수 고지입니다.
+
+            REQUIRED_PREFIX 가 주어지지 않았다면 어떤 고지 문구도 붙이지 마십시오.
 
             [개인화 설명] personalizedExplanation
             - 사용자의 도메인과 배경지식에 맞춰, 그 사람이 이미 아는 개념에 빗대어 풀어 쓰십시오.
+            - ANALOGY 후보가 주어지면 그중 이 용어의 구조와 실제로 닮은 것을 하나 골라 비유로 쓰고,
+              "[분야] 쪽 사례에 빗대면" 처럼 어느 분야 이야기인지 밝히십시오.
+              닮은 것이 없으면 비유를 억지로 만들지 말고 후보를 무시하십시오.
             - 대화 맥락(CONTEXT)이 주어지면 그 대화에서 이 용어가 어떤 의미로 쓰였는지를 반영하십시오.
             - 공식 정의를 그대로 반복하지 마십시오.
 
@@ -81,6 +102,10 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
             - 사족(인사말, "물론이죠" 등)을 붙이지 마십시오.
             - 분량 지시(SHORT/MEDIUM/DETAILED)를 지키십시오.
             """;
+
+    /** 사내 자료 조회 자체가 실패한 경우. "등록된 정의가 없다"고 말하면 사실과 다르다. */
+    private static final String LOOKUP_FAILED_DISCLAIMER =
+            "사내 자료를 조회하지 못해 일반적인 의미로 안내합니다.";
 
     private final ChatClient chatClient;
 
@@ -94,6 +119,11 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
                         .model(MODEL)
                         .temperature(TEMPERATURE))
                 .build();
+    }
+
+    @Override
+    public String promptVersion() {
+        return PROMPT_VERSION;
     }
 
     @Override
@@ -155,7 +185,19 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
         } else {
             message.append("EVIDENCE: (없음 — 사내 근거 자료가 없습니다)\n");
             message.append("REQUIRED_PREFIX: officialDefinition 은 반드시 다음 문장으로 시작할 것 -> ")
-                    .append(GENERAL_DISCLAIMER).append('\n');
+                    .append(command.evidenceLookupFailed() ? LOOKUP_FAILED_DISCLAIMER : GENERAL_DISCLAIMER)
+                    .append('\n');
+        }
+
+        if (command.evidenceKeywordOnly()) {
+            message.append("EVIDENCE_KEYWORD_ONLY: true (글자 겹침으로 찾아온 근거 - 관련성 직접 판단 필요)\n");
+        }
+
+        if (command.analogies() != null && !command.analogies().isEmpty()) {
+            message.append("ANALOGY 후보 (사용자가 아는 분야의 문서):\n");
+            command.analogies().forEach(analogy -> message
+                    .append("  [").append(analogy.domain()).append("] ")
+                    .append(analogy.content()).append('\n'));
         }
 
         if (command.contextSnapshot() != null && !command.contextSnapshot().isBlank()) {
