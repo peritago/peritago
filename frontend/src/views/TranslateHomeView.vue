@@ -6,7 +6,6 @@ import { useAuthStore } from '@/stores/auth'
 import { usePersonaStore } from '@/stores/persona'
 import { useChatStore } from '@/stores/chat'
 import { useSttStore } from '@/stores/stt'
-import { useGlossaryStore } from '@/stores/glossary'
 
 import AppHeader from '@/components/AppHeader.vue'
 import ChatSidebar from '@/components/ChatSidebar.vue'
@@ -24,7 +23,6 @@ const auth = useAuthStore()
 const persona = usePersonaStore()
 const chat = useChatStore()
 const stt = useSttStore()
-const glossary = useGlossaryStore()
 
 const { user, initial } = storeToRefs(auth)
 const { activeLabel, activePersona } = storeToRefs(persona)
@@ -50,8 +48,7 @@ const composer = ref(null)
 const personaLabel = computed(() => activePersona.value.domains.slice(0, 2).join(' / '))
 
 onMounted(() => {
-  // 후보 감지는 Glossary가 있어야 돌아갑니다.
-  glossary.load()
+  chat.init()
   persona.loadDomainTags()
 })
 
@@ -101,8 +98,8 @@ async function lessAnalogy(id) {
   chat.regenerate(id)
 }
 
-function onNewChat() {
-  chat.createChat()
+async function onNewChat() {
+  await chat.createChat()
   composer.value?.focus()
 }
 </script>
