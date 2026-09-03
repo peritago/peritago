@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: domainbridge
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/domainbridge
+    username: domainbridge
+    password: domainbridge
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: true
+    defer-datasource-initialization: true   # ← 추가: JPA가 테이블 만든 후에 data.sql 실행
+
+  sql:
+    init:
+      mode: always                          # ← 추가: data.sql을 항상 실행
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:dummy-key-for-now}
+
+jwt:
+  secret: ${JWT_SECRET:temporary-local-dev-secret-key-change-this-later-1234567890}
