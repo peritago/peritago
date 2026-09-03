@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    # wiki 도메인의 pg_bigm(한국어 키워드 검색) 확장을 쓰기 위해 pgvector/pgvector:pg16을
+    # 베이스로 빌드한 커스텀 이미지 사용 (docker/postgres-pgbigm/Dockerfile 참고).
+    build: ./docker/postgres-pgbigm
     container_name: domainbridge-postgres
     environment:
       POSTGRES_DB: domainbridge
