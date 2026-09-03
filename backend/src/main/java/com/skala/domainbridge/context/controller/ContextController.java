@@ -3,7 +3,9 @@ package com.skala.domainbridge.context.controller;
 import com.skala.domainbridge.common.response.ApiResponse;
 import com.skala.domainbridge.context.dto.request.ContextAppendRequestDto;
 import com.skala.domainbridge.context.dto.response.ContextWindowResponseDto;
+import com.skala.domainbridge.context.dto.response.DetectedTermDto;
 import com.skala.domainbridge.context.service.ContextService;
+import com.skala.domainbridge.context.service.SlangDetector;
 import com.skala.domainbridge.translate.service.ChatSessionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,9 +26,13 @@ import java.util.List;
 public class ContextController {
 
     private final ContextService contextService;
+    private final SlangDetector slangDetector;
     private final ChatSessionService chatSessionService;
 
-    /** STT 전사 문장 적재. 적재 후의 윈도우를 그대로 돌려준다. */
+    /**
+     * STT 전사 문장 적재. 적재 후의 윈도우와, 이번 문장에서 자동 감지된 사내 은어(F-11)를 돌려준다.
+     * 감지는 은어 사전과의 문자열 대조라 LLM 을 호출하지 않는다.
+     */
     @PostMapping("/messages")
     public ApiResponse<ContextWindowResponseDto> appendMessages(
             Authentication authentication, @Valid @RequestBody ContextAppendRequestDto request) {
@@ -34,7 +40,10 @@ public class ContextController {
         chatSessionService.findMySession(userId, request.sessionId());
 
         List<String> window = contextService.appendAll(request.sessionId(), request.sentences());
-        return ApiResponse.success(ContextWindowResponseDto.of(request.sessionId(), window));
+        List<DetectedTermDto> detected = slangDetector.detect(request.sentences());
+
+        return ApiResponse.success(
+                ContextWindowResponseDto.of(request.sessionId(), window, detected));
     }
 
     /** 현재 맥락 윈도우 조회. 프론트 확인용이자 시연에서 맥락 반영을 보여주는 용도. */
