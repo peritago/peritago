@@ -20,23 +20,25 @@ const router = createRouter({
     },
     { path: '/persona', name: 'persona', component: () => import('@/views/PersonaSetupView.vue') },
     { path: '/', name: 'home', component: () => import('@/views/TranslateHomeView.vue') },
+    /**
+     * 특정 채팅을 딥링크/새로고침으로 복원하기 위한 라우트 — home과 같은 컴포넌트를 씁니다.
+     * TranslateHomeView가 마운트 시 :id를 읽어 그 채팅을 선택하고, 채팅을 전환할 때마다
+     * 여기로 URL을 맞춰(router.replace) 둡니다.
+     */
+    { path: '/chat/:id', name: 'chat', component: () => import('@/views/TranslateHomeView.vue') },
 
-    // S-06~S-09는 아직 시안·API가 없어 자리만 잡아둡니다.
-    {
-      path: '/history',
-      name: 'history',
-      component: () => import('@/views/StubView.vue'),
-      props: {
-        screen: 'S-06',
-        title: '질의 이력',
-        description:
-          '채팅 목록 → 채팅 내 질의 목록의 2단계 구조로 만들 화면입니다. 백엔드에 Chat·Query 엔터티가 추가되면 연결합니다.',
-      },
-    },
+    /**
+     * S-06. 전용 백엔드 엔터티 없이, GET /api/translate/history를 용어 기준으로 묶어서 만듭니다.
+     * chat 스토어의 glossaryTerms 참고.
+     */
+    { path: '/my-glossary', name: 'my-glossary', component: () => import('@/views/MyGlossaryView.vue') },
+
+    // S-07~S-09는 아직 시안·API가 없어 자리만 잡아둡니다.
     {
       path: '/glossary',
       name: 'glossary',
       component: () => import('@/views/StubView.vue'),
+      meta: { adminOnly: true },
       props: {
         screen: 'S-07 · S-08',
         title: '용어집 관리',
@@ -66,6 +68,9 @@ router.beforeEach(async (to) => {
     if (!persona.loaded) await persona.load().catch(() => {})
     if (!persona.isConfigured) return { name: 'persona' }
   }
+
+  // 관리자 전용 화면 — role은 JWT 클레임을 읽은 화면 표시용 판단이라, 실제 차단은 서버가 합니다.
+  if (to.meta.adminOnly && !auth.isAdmin) return { name: 'home' }
 
   return true
 })

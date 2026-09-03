@@ -7,6 +7,8 @@ const props = defineProps({
   query: { type: Object, required: true },
   personaLabel: { type: String, default: '' },
   collapsible: { type: Boolean, default: true },
+  showLessAnalogy: { type: Boolean, default: true },
+  savedLabel: { type: String, default: '이력에 저장됨' },
 })
 
 const emit = defineEmits(['regenerate', 'collapse', 'less-analogy'])
@@ -93,10 +95,15 @@ const isGeneral = computed(() => props.query.evidenceType === 'general_knowledge
       <button type="button" class="btn btn--surface" @click="emit('regenerate')">
         다시 설명하기
       </button>
-      <button type="button" class="btn btn--ghost" @click="emit('less-analogy')">
+      <button
+        v-if="showLessAnalogy"
+        type="button"
+        class="btn btn--ghost"
+        @click="emit('less-analogy')"
+      >
         비유 더 적게
       </button>
-      <span v-if="!isStreaming" class="u-meta card__saved">이력에 저장됨</span>
+      <span v-if="!isStreaming" class="u-meta card__saved">{{ savedLabel }}</span>
     </footer>
   </article>
 </template>

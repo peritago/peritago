@@ -35,19 +35,60 @@ export const useChatStore = defineStore('chat', () => {
   const stack = computed(() => [...queries.value].reverse())
   const isStreaming = computed(() => queries.value.some((q) => q.status === 'streaming'))
 
-  /** 홈 진입 시 1회 — 세션 목록과 이력을 불러오고, 없으면 새 채팅을 만듭니다. */
-  async function init() {
+  /**
+   * 나의 용어집 (S-06) — 전용 엔터티 없이, 전체 질의 이력을 용어 기준으로 묶어서 만듭니다.
+   * 같은 용어를 여러 번 물어봤으면 가장 최근 정의만 남기고 횟수만 셉니다.
+   */
+  const glossaryTerms = computed(() => {
+    const byTerm = new Map()
+    for (const items of historyBySession.value.values()) {
+      for (const raw of items) {
+        const prev = byTerm.get(raw.term)
+        if (!prev || raw.queryId > prev.id) {
+          byTerm.set(raw.term, { ...fromHistoryItem(raw), count: (prev?.count ?? 0) + 1 })
+        } else {
+          prev.count += 1
+        }
+      }
+    }
+    return [...byTerm.values()].sort((a, b) => a.term.localeCompare(b.term, 'ko'))
+  })
+
+  /**
+   * 홈 진입 시 1회 — 세션 목록과 이력을 불러오고, 없으면 새 채팅을 만듭니다.
+   * URL(/chat/:id)에 특정 채팅이 지정돼 있으면(새로고침·딥링크·뒤로가기) 그 채팅을 우선
+   * 선택합니다 — 내 채팅이 아니거나 존재하지 않으면 조용히 최신 채팅으로 대체합니다.
+   */
+  async function init(initialId) {
     if (sessionsLoaded.value) return
 
-    const history = await api.get('/api/translate/history?page=0&size=200').catch(() => null)
-    historyBySession.value = groupBySession(history?.content ?? [])
+    historyBySession.value = groupBySession(await fetchAllHistory())
 
     const sessions = await api.get('/api/sessions').catch(() => [])
     chats.value = (sessions ?? []).map((session, index) => toChatSummary(session, index))
     sessionsLoaded.value = true
 
-    if (chats.value.length) selectChat(chats.value[0].id)
+    if (initialId && chats.value.some((c) => c.id === initialId)) selectChat(initialId)
+    else if (chats.value.length) selectChat(chats.value[0].id)
     else await createChat()
+  }
+
+  /**
+   * GET /api/translate/history는 페이지 단위라 한 번에 다 안 옵니다 (F-08).
+   * 질의가 200건을 넘는 사용자는 고정 size 한 번 호출로는 오래된 이력이 잘리므로,
+   * hasNext가 false가 될 때까지 순회해서 전체를 모읍니다.
+   */
+  async function fetchAllHistory() {
+    const items = []
+    const size = 200
+    const MAX_PAGES = 100 // 안전장치 — 정상 흐름에선 도달하지 않습니다.
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const res = await api.get(`/api/translate/history?page=${page}&size=${size}`).catch(() => null)
+      if (!res) break
+      items.push(...(res.content ?? []))
+      if (!res.hasNext) break
+    }
+    return items
   }
 
   function toChatSummary(session, index) {
@@ -61,8 +102,18 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 이전 세션의 서버 맥락을 즉시 비웁니다 (DELETE /api/context/{sessionId}).
+   * 새 채팅을 만들거나 다른 채팅으로 넘어가면 이전 세션의 실시간 맥락은 더 쓸 일이 없으므로,
+   * TTL(1시간) 만료를 기다리지 않고 그 자리에서 정리합니다.
+   */
+  function leavePreviousSession(nextId) {
+    if (currentChatId.value && currentChatId.value !== nextId) stt.clearContext(currentChatId.value)
+  }
+
   /** UC-01 → UC-16: 로그인하면 사용자 개입 없이 새 채팅이 생깁니다. */
   async function createChat() {
+    leavePreviousSession(null)
     const { session } = await api.post('/api/sessions')
     chats.value.unshift({
       id: session.id,
@@ -83,11 +134,33 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 세션 전환 — 그 세션의 과거 질의를 이력에서 복원합니다. */
   function selectChat(id) {
+    leavePreviousSession(id)
     currentChatId.value = id
     queries.value = (historyBySession.value.get(id) ?? []).map(fromHistoryItem)
     expandedId.value = queries.value.at(-1)?.id ?? null
     stt.setSessionId(id)
     stt.resetWindow()
+  }
+
+  /** 로그아웃 등 앱을 떠날 때 현재 세션의 서버 맥락도 정리합니다. */
+  function clearCurrentContext() {
+    stt.clearContext(currentChatId.value)
+  }
+
+  /** 채팅 제목을 사용자가 직접 바꿉니다 (사이드바 인라인 편집). */
+  async function renameChat(id, title) {
+    const trimmed = String(title ?? '').trim()
+    if (!trimmed) return
+    const chatEntry = chats.value.find((c) => c.id === id)
+    const previous = chatEntry?.title
+    if (chatEntry) chatEntry.title = trimmed // 낙관적 갱신 — 실패하면 되돌립니다.
+    try {
+      const session = await api.put(`/api/sessions/${id}/title`, { title: trimmed })
+      if (chatEntry) chatEntry.title = session.title
+    } catch (err) {
+      if (chatEntry) chatEntry.title = previous
+      throw err
+    }
   }
 
   /**
@@ -149,10 +222,23 @@ export const useChatStore = defineStore('chat', () => {
           onPersonalized: ({ delta }) => {
             query.personalized += delta
           },
-          onDone: ({ queryId }) => {
+          onDone: ({ queryId, sessionId, term, sourceType, officialDefinition, personalizedExplanation, outsideCompanyStandard, createdAt }) => {
             query.status = 'done'
             if (expandedId.value === query.id) expandedId.value = queryId
             query.id = queryId
+
+            const resolvedSessionId = sessionId ?? currentChatId.value
+            const historyItem = {
+              sessionId: resolvedSessionId,
+              queryId,
+              term: term ?? query.term,
+              sourceType,
+              officialDefinition,
+              personalizedExplanation,
+              outsideCompanyStandard: Boolean(outsideCompanyStandard),
+              createdAt: createdAt ?? new Date().toISOString(),
+            }
+            upsertHistoryEntry(resolvedSessionId, historyItem)
           },
         },
         { signal: controller.signal },
@@ -169,6 +255,24 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     return query
+  }
+
+  /**
+   * 완료된 질의를 이력에 즉시 반영합니다 — historyBySession(과 그걸로 만드는 나의 용어집,
+   * 사이드바 질의 건수)이 새로고침 없이도 방금 질의를 바로 보게 됩니다.
+   * historyBySession/chats를 참조하므로 스토어 클로저 안에 있어야 합니다.
+   */
+  function upsertHistoryEntry(sessionId, item) {
+    if (!sessionId || !item?.queryId) return
+    const list = historyBySession.value.get(sessionId) ?? []
+    const index = list.findIndex((entry) => entry.queryId === item.queryId)
+    if (index >= 0) list[index] = item
+    else list.push(item)
+    list.sort((a, b) => a.queryId - b.queryId)
+    historyBySession.value.set(sessionId, list)
+
+    const chatEntry = chats.value.find((chat) => chat.id === sessionId)
+    if (chatEntry) chatEntry.count = list.length
   }
 
   /** '다시 설명하기' — 같은 용어를 같은 흐름으로 다시 태웁니다. */
@@ -190,6 +294,7 @@ export const useChatStore = defineStore('chat', () => {
 
   return {
     chats,
+    sessionsLoaded,
     currentChatId,
     currentChat,
     queries,
@@ -198,9 +303,12 @@ export const useChatStore = defineStore('chat', () => {
     expandedId,
     submitError,
     isStreaming,
+    glossaryTerms,
     init,
     createChat,
     selectChat,
+    renameChat,
+    clearCurrentContext,
     submitQuery,
     regenerate,
     toggleExpanded,

@@ -204,6 +204,19 @@ export const useSttStore = defineStore('stt', () => {
     }
   }
 
+  /**
+   * 세션을 벗어날 때 그 세션의 서버 맥락을 즉시 비웁니다 (DELETE /api/context/{sessionId}).
+   * TTL(1시간) 만료를 기다리지 않는 즉시 정리 경로 — 실패해도 조용히 무시합니다(TTL이 결국 지워줍니다).
+   */
+  async function clearContext(id) {
+    if (!id) return
+    try {
+      await api.delete(`/api/context/${id}`)
+    } catch {
+      // 정리 실패는 무시합니다 — 다음 접근 시 TTL이 처리합니다.
+    }
+  }
+
   /** 윈도우를 벗어난 문장에서만 나온 후보는 함께 내립니다. */
   function pruneDetected(droppedSentenceIds) {
     const dropped = new Set(droppedSentenceIds)
@@ -268,6 +281,7 @@ export const useSttStore = defineStore('stt', () => {
     stop,
     toggle,
     resetWindow,
+    clearContext,
     grantConsent,
     seed,
   }
