@@ -59,8 +59,16 @@ async function onLogout() {
   router.push('/login')
 }
 
-/** UC-10: 자동 시작하지 않습니다. 항상 명시적 토글 → 모달 → 시작 순서입니다. */
+/**
+ * UC-10: 자동 시작하지 않습니다. 항상 명시적 토글 → 모달 → 시작 순서입니다.
+ * 단, 이 채팅에서 세션 렌즈를 이미 확인했다면(persona.sessionPersona) 다시 묻지 않고
+ * 그 상태를 그대로 재사용합니다 — 확인은 채팅 진입 시(첫 녹음 시작 시) 1회면 충분합니다.
+ */
 function requestStart() {
+  if (persona.sessionPersona) {
+    stt.start()
+    return
+  }
   modal.value = consentGiven.value ? 'lens' : 'first-run'
 }
 
