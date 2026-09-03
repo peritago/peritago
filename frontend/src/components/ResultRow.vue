@@ -23,11 +23,11 @@ const preview = computed(() => {
   >
     <span class="row__main">
       <span class="row__term">{{ query.term }}</span>
-      <span class="row__meta">{{ query.domain || '분류 없음' }} · {{ query.at }}</span>
+      <span class="row__meta">{{ query.at }}</span>
       <span class="row__preview">{{ preview }}</span>
     </span>
     <span class="row__right">
-      <EvidenceBadge :type="query.evidenceType" :cached="query.cached" size="sm" />
+      <EvidenceBadge :type="query.evidenceType" size="sm" />
       <i class="ti ti-chevron-right" aria-hidden="true"></i>
     </span>
   </button>

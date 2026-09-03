@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import EvidenceBadge from './EvidenceBadge.vue'
 import HighlightText from './HighlightText.vue'
 
@@ -10,8 +10,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['regenerate', 'collapse', 'less-analogy'])
-
-const showSource = ref(false)
 
 const isStreaming = computed(() => props.query.status === 'streaming')
 const hasOfficial = computed(() => Boolean(props.query.official))
@@ -26,12 +24,11 @@ const isGeneral = computed(() => props.query.evidenceType === 'general_knowledge
         <span class="u-label">{{ isStreaming ? '생성 중' : '최신 결과' }} · {{ query.at }}</span>
         <div class="card__term">
           <h3>{{ query.term }}</h3>
-          <span class="u-meta">{{ query.domain || '분류 확인 중' }}</span>
         </div>
       </div>
 
       <div class="card__head-right">
-        <EvidenceBadge :type="query.evidenceType" :cached="query.cached" />
+        <EvidenceBadge :type="query.evidenceType" />
         <button
           v-if="collapsible"
           type="button"
@@ -56,7 +53,8 @@ const isGeneral = computed(() => props.query.evidenceType === 'general_knowledge
         <div v-else class="skeleton" aria-hidden="true">
           <span></span><span></span><span class="is-short"></span>
         </div>
-        <span v-if="query.source" class="u-meta">{{ query.source }}</span>
+        <span v-if="query.evidenceType === 'glossary'" class="u-meta">사내 Glossary</span>
+        <span v-else-if="query.evidenceType === 'wiki'" class="u-meta">사내 위키</span>
         <span v-else-if="isGeneral && !isStreaming" class="u-meta">
           사내 Glossary와 위키에서 근거를 찾지 못했습니다.
         </span>
@@ -80,19 +78,6 @@ const isGeneral = computed(() => props.query.evidenceType === 'general_knowledge
       </div>
     </section>
 
-    <section
-      v-if="query.contextInterpretation"
-      class="section section--context"
-      aria-label="문맥 해석"
-    >
-      <span class="section__rule section__rule--soft" aria-hidden="true"></span>
-      <div class="section__body">
-        <h4 class="section__label">문맥에서는</h4>
-        <p class="section__text">{{ query.contextInterpretation }}</p>
-        <span v-if="query.contextSource" class="u-meta">{{ query.contextSource }}</span>
-      </div>
-    </section>
-
     <!-- 일반 지식 폴백이면 이 문구는 반드시 카드 안에 노출됩니다. -->
     <p v-if="isGeneral && !isStreaming" class="notice">
       <i class="ti ti-alert-circle" aria-hidden="true"></i>
@@ -111,23 +96,8 @@ const isGeneral = computed(() => props.query.evidenceType === 'general_knowledge
       <button type="button" class="btn btn--ghost" @click="emit('less-analogy')">
         비유 더 적게
       </button>
-      <button
-        v-if="query.source"
-        type="button"
-        class="btn btn--ghost"
-        :aria-expanded="String(showSource)"
-        aria-controls="result-source"
-        @click="showSource = !showSource"
-      >
-        {{ showSource ? '근거 원문 접기' : '근거 원문 보기' }}
-      </button>
       <span v-if="!isStreaming" class="u-meta card__saved">이력에 저장됨</span>
     </footer>
-
-    <div v-if="showSource && query.source" id="result-source" class="source">
-      <span class="u-label">근거</span>
-      <p>{{ query.source }}</p>
-    </div>
   </article>
 </template>
 
@@ -207,10 +177,6 @@ const isGeneral = computed(() => props.query.evidenceType === 'general_knowledge
   background: var(--c-text);
 }
 
-.section__rule--soft {
-  background: var(--c-border);
-}
-
 .section__body {
   display: flex;
   flex-direction: column;
@@ -287,22 +253,6 @@ const isGeneral = computed(() => props.query.evidenceType === 'general_knowledge
 
 .card__saved {
   margin-left: auto;
-}
-
-.source {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 16px;
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-control);
-}
-
-.source p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.7;
 }
 
 /* 스켈레톤 — 생성 중 자리를 잡아 카드가 튀지 않게 합니다. */
