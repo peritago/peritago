@@ -102,7 +102,7 @@ function railBars(bars) {
 
 .rail__wave i {
   width: 3px;
-  background: var(--c-wave-high);
+  background: var(--c-accent);
   transition: height 0.09s linear;
 }
 

@@ -51,6 +51,7 @@ function onToggle() {
         v-if="isGlobal"
         type="button"
         class="btn btn--ghost rec__action rec__action--inline"
+        :class="{ 'rec__action--start': !isRecording }"
         :disabled="isBusy"
         @click="onToggle"
       >
@@ -64,6 +65,7 @@ function onToggle() {
       v-if="!isGlobal"
       type="button"
       class="btn btn--surface rec__action rec__action--block"
+      :class="{ 'rec__action--start': !isRecording }"
       :disabled="isBusy"
       @click="onToggle"
     >
@@ -159,6 +161,19 @@ function onToggle() {
   margin-left: 12px;
   height: 34px;
   padding: 0 14px;
+}
+
+/* 녹음 시작(꺼진 상태) 버튼만 포인트 컬러로 강조합니다. 중지 버튼은 중립을 유지합니다. */
+.rec__action--start {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-on-accent);
+}
+
+.rec__action--start:hover:not(:disabled) {
+  background: var(--c-text-strong);
+  border-color: var(--c-text-strong);
+  color: var(--c-on-dark);
 }
 
 .rec__error {

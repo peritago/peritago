@@ -154,8 +154,8 @@ defineExpose({ focus })
 }
 
 .composer__field:focus-within {
-  border-color: var(--c-text);
-  box-shadow: 0 0 0 3px var(--c-text);
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px var(--c-accent);
 }
 
 .composer__input {

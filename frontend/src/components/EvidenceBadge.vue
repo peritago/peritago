@@ -55,7 +55,7 @@ const variant = computed(() => VARIANTS[props.type] ?? null)
 /* 사내 공식 근거 — 가장 강한 테두리로 구분합니다. */
 .badge--glossary {
   background: var(--c-surface);
-  border-color: var(--c-text);
+  border-color: var(--c-accent);
   font-weight: 800;
 }
 

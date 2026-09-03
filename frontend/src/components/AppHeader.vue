@@ -11,12 +11,12 @@ defineEmits(['open-lens', 'open-history', 'open-glossary', 'logout'])
 
 <template>
   <header class="head">
-    <div class="head__brand">
+    <router-link to="/" class="head__brand">
       <img src="/assets/peritago-parrot.png" alt="" width="32" height="32" />
       <span class="head__name">PERITAGO</span>
       <span class="head__rule" aria-hidden="true"></span>
       <span class="head__tagline">도메인 용어 &amp; 은어 실시간 번역기</span>
-    </div>
+    </router-link>
 
     <div class="head__right">
       <!-- 지금 어떤 렌즈로 듣고 있는지는 항상 헤더에서 읽힙니다 (UC-16). -->
@@ -64,6 +64,8 @@ defineEmits(['open-lens', 'open-history', 'open-glossary', 'logout'])
   align-items: center;
   gap: 12px;
   min-width: 0;
+  color: inherit;
+  text-decoration: none;
 }
 
 .head__brand img {
