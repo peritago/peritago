@@ -145,7 +145,6 @@ async function onNewChat() {
         <div class="desk__scroll">
           <div class="desk__head">
             <div class="desk__title">
-              <span class="u-label">이 채팅</span>
               <h1>이 채팅의 질의</h1>
               <span class="u-meta">{{ queryCount }}건</span>
             </div>
