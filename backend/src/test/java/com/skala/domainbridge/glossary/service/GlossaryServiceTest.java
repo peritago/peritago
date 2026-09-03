@@ -2,6 +2,7 @@ package com.skala.domainbridge.glossary.service;
 
 import com.skala.domainbridge.common.exception.CustomException;
 import com.skala.domainbridge.common.exception.ErrorCode;
+import com.skala.domainbridge.glossary.dto.response.GlossaryResponseDto;
 import com.skala.domainbridge.glossary.entity.Glossary;
 import com.skala.domainbridge.glossary.repository.GlossaryRepository;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,7 +72,32 @@ class GlossaryServiceTest {
         assertThat(result).isEmpty();
     }
 
+    @Test
+    void 전체_목록을_createdAt_내림차순으로_반환한다() throws Exception {
+        Glossary older = newGlossary(1L, "TF", "태스크포스", LocalDateTime.now().minusDays(1));
+        Glossary newer = newGlossary(2L, "ASAP", "가능한 빨리", LocalDateTime.now());
+        when(glossaryRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(newer, older));
+
+        List<GlossaryResponseDto> result = glossaryService.getAll();
+
+        assertThat(result).extracting(GlossaryResponseDto::term).containsExactly("ASAP", "TF");
+    }
+
+    @Test
+    void 등록된_항목이_없으면_빈_목록을_반환한다() {
+        when(glossaryRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+        List<GlossaryResponseDto> result = glossaryService.getAll();
+
+        assertThat(result).isEmpty();
+    }
+
     private Glossary newGlossary(Long id, String term, String officialDefinition) throws Exception {
+        return newGlossary(id, term, officialDefinition, LocalDateTime.now());
+    }
+
+    private Glossary newGlossary(Long id, String term, String officialDefinition, LocalDateTime createdAt)
+            throws Exception {
         Glossary glossary = Glossary.builder()
                 .term(term)
                 .officialDefinition(officialDefinition)
@@ -78,6 +106,9 @@ class GlossaryServiceTest {
         Field idField = Glossary.class.getDeclaredField("id");
         idField.setAccessible(true);
         idField.set(glossary, id);
+        Field createdAtField = Glossary.class.getSuperclass().getDeclaredField("createdAt");
+        createdAtField.setAccessible(true);
+        createdAtField.set(glossary, createdAt);
         return glossary;
     }
 }

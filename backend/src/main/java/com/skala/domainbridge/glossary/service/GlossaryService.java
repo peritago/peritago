@@ -2,12 +2,14 @@ package com.skala.domainbridge.glossary.service;
 
 import com.skala.domainbridge.common.exception.CustomException;
 import com.skala.domainbridge.common.exception.ErrorCode;
+import com.skala.domainbridge.glossary.dto.response.GlossaryResponseDto;
 import com.skala.domainbridge.glossary.entity.Glossary;
 import com.skala.domainbridge.glossary.repository.GlossaryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -34,5 +36,12 @@ public class GlossaryService implements GlossaryMatcher {
     public Optional<GlossaryMatchResult> match(String term) {
         return glossaryRepository.findByTerm(term)
                 .map(g -> new GlossaryMatchResult(g.getId(), g.getTerm(), g.getOfficialDefinition()));
+    }
+
+    public List<GlossaryResponseDto> getAll() {
+        return glossaryRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(GlossaryResponseDto::from)
+                .toList();
     }
 }
