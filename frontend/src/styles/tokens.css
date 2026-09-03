@@ -1,0 +1,53 @@
+/* PERITAGO 디자인 토큰
+ * 값은 확정 시안(design.html, S-01~S-05)에서 그대로 추출했습니다.
+ * 가이드 문서는 다크 팔레트였지만 최종 시안이 라이트 뉴트럴로 확정되었으므로
+ * 확정 시안을 기준으로 삼고, 가이드의 "역할 기반 토큰" 구조만 유지합니다.
+ */
+:root {
+  /* 표면 */
+  --c-bg: #fafafa;
+  --c-surface: #f4f5f6;
+  --c-surface-raised: #edeeef;
+  --c-border: #e5e5e5;
+
+  /* 텍스트 · 액션 */
+  --c-text: #2d2d2d;
+  --c-text-strong: #000000;
+  --c-text-muted: #71717a;
+  --c-on-dark: #fafafa;
+
+  /* 형광펜 — 유일한 채도 높은 색. 강조 이외에는 쓰지 않습니다. */
+  --c-highlight: #d4ff00;
+  --c-on-highlight: #000000;
+
+  /* 파형 3단계 */
+  --c-wave-low: #d4d4d8;
+  --c-wave-mid: #a1a1aa;
+  --c-wave-high: #71717a;
+
+  /* 간격 */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 22px;
+  --s-6: 26px;
+  --s-7: 36px;
+
+  /* 모서리 — 배지 2px, 컨트롤 4px, 카드 8px */
+  --r-badge: 2px;
+  --r-control: 4px;
+  --r-card: 8px;
+
+  /* 타이포 */
+  --font-sans: 'Pretendard Variable', Pretendard, system-ui, -apple-system, sans-serif;
+
+  /* 레이아웃 고정값 */
+  --h-header: 64px;
+  --w-sidebar: 260px;
+  --w-console: 380px;
+  --w-console-rail: 36px;
+
+  --focus-ring: 3px solid var(--c-text);
+  --t-fast: 0.14s ease;
+}
