@@ -109,7 +109,7 @@ defineEmits(['create', 'select'])
 .item__rule {
   width: 4px;
   flex: none;
-  background: var(--c-text);
+  background: var(--c-accent);
 }
 
 .item__body {

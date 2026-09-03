@@ -51,9 +51,9 @@ defineEmits(['toggle', 'remove'])
 }
 
 .tag--on {
-  background: var(--c-text);
-  border-color: var(--c-text);
-  color: var(--c-on-dark);
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-on-accent);
   font-weight: 700;
 }
 

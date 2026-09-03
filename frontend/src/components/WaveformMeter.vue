@@ -52,20 +52,20 @@ const displayBars = computed(() =>
 .wave__bar {
   width: 3px;
   flex: none;
-  background: var(--c-wave-mid);
+  background: var(--c-accent);
   transition:
     height 0.09s linear,
-    background-color 0.18s ease;
+    opacity 0.18s ease;
 }
 
 .wave__bar.is-low {
-  background: var(--c-wave-low);
+  opacity: 0.45;
 }
 .wave__bar.is-mid {
-  background: var(--c-wave-mid);
+  opacity: 0.7;
 }
 .wave__bar.is-high {
-  background: var(--c-wave-high);
+  opacity: 1;
 }
 
 .wave.is-idle .wave__bar {
