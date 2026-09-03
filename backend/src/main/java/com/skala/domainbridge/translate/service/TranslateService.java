@@ -135,7 +135,8 @@ public class TranslateService {
     }
 
     /**
-     * 응답 생성 위임. 맥락이 없는 질의는 캐시를 먼저 조회하고, 생성 결과를 캐시에 넣는다(F-14).
+     * 응답 생성 위임. 두 파트가 모두 불필요하면 LLM 을 호출하지 않는다.
+     * 맥락이 없는 질의는 캐시를 먼저 조회하고, 생성 결과를 캐시에 넣는다(F-14).
      * 맥락이 있는 질의는 캐싱하지 않는다 - 사유는 TranslationCache 주석 참고.
      *
      * 외부 LLM 호출은 rate limit·네트워크 오류·응답 시간 초과로 실패할 수 있으므로
@@ -147,6 +148,18 @@ public class TranslateService {
      */
     private TranslationGenerator.Result generate(String term, String contextSnapshot,
                                                  Evidence evidence, UserPersonaResponseDto persona) {
+
+        // 생성할 파트가 하나도 없으면 LLM 을 부르지 않는다.
+        // Glossary 에 등록된 공식 정의가 있고 페르소나도 없는 경우로, 공식 정의는 등록 원문을 그대로 쓰면 되고
+        // 개인화 파트는 어차피 안내 문구로 대체된다. 호출해봐야 버릴 결과에 토큰만 쓴다.
+        // 공식 정의를 LLM 이 생성한다는 원칙은 이 경우를 제외하고 그대로 유지된다.
+        if (!persona.exists()
+                && evidence.sourceType() == SourceType.GLOSSARY
+                && evidence.officialDefinition() != null) {
+            return new TranslationGenerator.Result(
+                    evidence.officialDefinition(), null, null, null, 0, 0);
+        }
+
         TranslationGenerator.Command command = new TranslationGenerator.Command(
                 term,
                 contextSnapshot,
