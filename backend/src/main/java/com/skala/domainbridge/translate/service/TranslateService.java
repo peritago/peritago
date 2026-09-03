@@ -4,6 +4,7 @@ import com.skala.domainbridge.common.exception.CustomException;
 import com.skala.domainbridge.common.exception.ErrorCode;
 import com.skala.domainbridge.context.service.ContextService;
 import com.skala.domainbridge.glossary.service.GlossaryMatcher;
+import com.skala.domainbridge.translate.cache.TranslationCache;
 import com.skala.domainbridge.translate.dto.request.TranslateRequestDto;
 import com.skala.domainbridge.translate.dto.response.TranslateResponseDto;
 import com.skala.domainbridge.translate.entity.AiResponse;
@@ -21,6 +22,7 @@ import com.skala.domainbridge.user.repository.UserRepository;
 import com.skala.domainbridge.translate.dto.response.PageResponseDto;
 import com.skala.domainbridge.user.service.PersonaService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -38,6 +41,7 @@ import java.util.stream.Collectors;
  * 근거 확보는 3단계 폴백: Glossary Exact Match → 위키 벡터 검색(RAG) → LLM 일반 지식.
  * 미등록 용어도 예외가 아니라 sourceType=GENERAL 로 200 정상 응답한다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -58,6 +62,7 @@ public class TranslateService {
     private final GlossaryMatcher glossaryMatcher;
     private final WikiSearcher wikiSearcher;
     private final TranslationGenerator translationGenerator;
+    private final TranslationCache translationCache;
 
     @Transactional
     public TranslateResponseDto translate(Long userId, TranslateRequestDto request) {
@@ -85,17 +90,7 @@ public class TranslateService {
         UserPersonaResponseDto persona = personaService.findPersona(userId);
         Evidence evidence = resolveEvidence(term);
 
-        TranslationGenerator.Result generated = translationGenerator.generate(
-                new TranslationGenerator.Command(
-                        term,
-                        contextSnapshot,
-                        evidence.sourceType(),
-                        evidence.officialDefinition(),
-                        persona.domainTags(),
-                        persona.personaDescription(),
-                        persona.officialDefLength(),
-                        persona.personalizedExpLength(),
-                        persona.exists()));
+        TranslationGenerator.Result generated = generate(term, contextSnapshot, evidence, persona);
 
         AiResponse response = aiResponseRepository.save(AiResponse.builder()
                 .query(query)
@@ -137,6 +132,53 @@ public class TranslateService {
                 .toList();
 
         return PageResponseDto.of(content, queries);
+    }
+
+    /**
+     * 응답 생성 위임. 맥락이 없는 질의는 캐시를 먼저 조회하고, 생성 결과를 캐시에 넣는다(F-14).
+     * 맥락이 있는 질의는 캐싱하지 않는다 - 사유는 TranslationCache 주석 참고.
+     *
+     * 외부 LLM 호출은 rate limit·네트워크 오류·응답 시간 초과로 실패할 수 있으므로
+     * 여기서 한 번 감싸 CustomException 으로 바꾼다. 그래야 GlobalExceptionHandler 가
+     * 팀 공통 ApiResponse 봉투로 503 을 내려주고, 프론트가 기본 500 본문을 파싱하다 깨지지 않는다.
+     *
+     * 이 메서드가 던지면 트랜잭션이 롤백되어 방금 저장한 Query 도 사라진다.
+     * 질의와 응답은 1:1 이어야 하므로, 응답 없는 질의가 이력에 남지 않는 편이 맞다.
+     */
+    private TranslationGenerator.Result generate(String term, String contextSnapshot,
+                                                 Evidence evidence, UserPersonaResponseDto persona) {
+        TranslationGenerator.Command command = new TranslationGenerator.Command(
+                term,
+                contextSnapshot,
+                evidence.sourceType(),
+                evidence.officialDefinition(),
+                persona.domainTags(),
+                persona.personaDescription(),
+                persona.officialDefLength(),
+                persona.personalizedExpLength(),
+                persona.exists());
+
+        boolean cacheable = translationCache.isCacheable(command);
+        if (cacheable) {
+            Optional<TranslationGenerator.Result> cached = translationCache.find(command);
+            if (cached.isPresent()) {
+                log.debug("번역 캐시 적중. term={}", term);
+                return cached.get();
+            }
+        }
+
+        TranslationGenerator.Result result;
+        try {
+            result = translationGenerator.generate(command);
+        } catch (Exception e) {
+            log.error("응답 생성 실패. term={}, sourceType={}", term, evidence.sourceType(), e);
+            throw new CustomException(ErrorCode.TRANSLATION_FAILED);
+        }
+
+        if (cacheable) {
+            translationCache.put(command, result);
+        }
+        return result;
     }
 
     /**

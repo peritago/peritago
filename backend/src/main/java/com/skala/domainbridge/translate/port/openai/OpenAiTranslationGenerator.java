@@ -3,6 +3,7 @@ package com.skala.domainbridge.translate.port.openai;
 import com.skala.domainbridge.translate.entity.SourceType;
 import com.skala.domainbridge.translate.port.TranslationGenerator;
 import com.skala.domainbridge.user.entity.ExplanationLength;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ResponseEntity;
@@ -11,7 +12,13 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * OpenAI 실연동 구현 (F-06).
@@ -43,6 +50,16 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
     private static final String MODEL = "gpt-4o-mini";
     private static final double TEMPERATURE = 0.3;
 
+    /**
+     * LLM 호출 상한. 실측 응답이 1.5~3.7초라 30초면 정상 호출을 자르지 않으면서
+     * 장애 시 요청이 무한정 매달리는 것을 막는다.
+     *
+     * HTTP 클라이언트 레벨이 아니라 호출 스레드 레벨의 상한이다. 클라이언트 레벨로 걸려면
+     * 공용 RestClient 설정을 건드려야 해서, 우선 이 클래스 안에서 처리한다.
+     * 타임아웃 시 요청 스레드는 즉시 풀려나지만 이미 나간 HTTP 요청 자체는 끝날 때까지 남는다.
+     */
+    private static final Duration CALL_TIMEOUT = Duration.ofSeconds(30);
+
     private static final String SYSTEM_PROMPT = """
             당신은 사내 용어 통역사입니다. 회의 중 낯선 용어를 만난 직원에게 두 파트로 설명합니다.
 
@@ -67,6 +84,9 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
 
     private final ChatClient chatClient;
 
+    /** 가상 스레드라 호출당 하나씩 만들어도 비용이 거의 없다. 타임아웃 부과 용도로만 쓴다. */
+    private final ExecutorService callExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
     public OpenAiTranslationGenerator(ChatClient.Builder chatClientBuilder) {
         this.chatClient = chatClientBuilder
                 .defaultSystem(SYSTEM_PROMPT)
@@ -80,10 +100,7 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
     public Result generate(Command command) {
         long startedAt = System.nanoTime();
 
-        ResponseEntity<ChatResponse, GeneratedContent> response = chatClient.prompt()
-                .user(buildUserMessage(command))
-                .call()
-                .responseEntity(GeneratedContent.class);
+        ResponseEntity<ChatResponse, GeneratedContent> response = callWithTimeout(command);
 
         int latencyMs = (int) ((System.nanoTime() - startedAt) / 1_000_000);
         GeneratedContent content = response.entity();
@@ -101,6 +118,31 @@ public class OpenAiTranslationGenerator implements TranslationGenerator {
                 PROMPT_VERSION,
                 resolveTokenUsage(chatResponse),
                 latencyMs);
+    }
+
+    private ResponseEntity<ChatResponse, GeneratedContent> callWithTimeout(Command command) {
+        Future<ResponseEntity<ChatResponse, GeneratedContent>> future = callExecutor.submit(
+                () -> chatClient.prompt()
+                        .user(buildUserMessage(command))
+                        .call()
+                        .responseEntity(GeneratedContent.class));
+        try {
+            return future.get(CALL_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new IllegalStateException("LLM 응답 시간 초과 (%d초)".formatted(CALL_TIMEOUT.toSeconds()), e);
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("LLM 호출이 중단되었습니다", e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new IllegalStateException("LLM 호출 실패", e.getCause());
+        }
+    }
+
+    @PreDestroy
+    void shutdown() {
+        callExecutor.shutdownNow();
     }
 
     private String buildUserMessage(Command command) {
