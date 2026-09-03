@@ -104,11 +104,12 @@ button {
 }
 
 .btn--primary {
-  background: var(--c-text);
-  color: var(--c-on-dark);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
 }
 .btn--primary:hover:not(:disabled) {
   background: var(--c-text-strong);
+  color: var(--c-on-dark);
 }
 
 .btn--surface {

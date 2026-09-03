@@ -20,6 +20,13 @@
   --c-highlight: #d4ff00;
   --c-on-highlight: #000000;
 
+  /*
+   * 포인트 컬러 — 딥 라임. 액션 버튼 배경·강조 바·포커스 보더·뱃지 배경/테두리·파형에만 씁니다.
+   * 일반 텍스트 색상에는 절대 쓰지 않습니다 — 그 용도는 위 --c-text/--c-text-muted입니다.
+   */
+  --c-accent: #c3ee41;
+  --c-on-accent: #000000;
+
   /* 파형 3단계 */
   --c-wave-low: #d4d4d8;
   --c-wave-mid: #a1a1aa;
