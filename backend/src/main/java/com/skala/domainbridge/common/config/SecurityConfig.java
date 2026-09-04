@@ -34,6 +34,9 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/users", "/api/domain-tags", "/error").permitAll()
+                        // Swagger UI 문서 자체는 인증 없이 열람 가능해야 한다 - 그래야 토큰이 없는
+                        // 상태에서도 API 명세를 보고 로그인 API부터 호출해 토큰을 발급받을 수 있다.
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/api/glossary/admin/**", "/api/wiki/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

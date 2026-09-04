@@ -6,6 +6,9 @@ import com.skala.domainbridge.wiki.dto.WikiUploadRequest;
 import com.skala.domainbridge.wiki.service.AnalogySearchService;
 import com.skala.domainbridge.wiki.service.WikiDocumentNotFoundException;
 import com.skala.domainbridge.wiki.service.WikiService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -38,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
  *   .requestMatchers("/api/wiki/admin/**").hasRole("ADMIN")
  *   .requestMatchers("/api/wiki/search").authenticated()
  */
+@Tag(name = "Wiki (RAG)", description = "사내 위키 문서 등록/삭제(ADMIN) 및 하이브리드(벡터+키워드) 검색 - 번역 RAG 파이프라인의 근거 저장소")
 @RestController
 @Validated
 public class WikiController {
@@ -53,6 +57,7 @@ public class WikiController {
 		this.analogySearchService = analogySearchService;
 	}
 
+	@Operation(summary = "위키 문서 등록", description = "위키 문서를 청크로 분할해 벡터 저장소에 임베딩/색인한다. ADMIN 권한 필요.")
 	@PostMapping("/api/wiki/admin")
 	public ResponseEntity<IndexResult> registerWikiDoc(@Valid @RequestBody WikiUploadRequest request) {
 		return ResponseEntity.ok(wikiService.index(request));
@@ -68,10 +73,14 @@ public class WikiController {
 	 * targetIndustry는 안 받는다 — translate는 질문이 어느 산업 얘기인지 미리 모른다(그게 질문의
 	 * 일부다). 1차 검색은 항상 전체 산업 대상이고, 벡터+키워드 랭킹이 알아서 구분한다.
 	 */
+	@Operation(summary = "위키 검색 (RAG)",
+			description = "① 전체 산업 대상 1차 검색(벡터+키워드 하이브리드, RRF 결합) → ② LLM 구조 서술 생성(HyDE) → "
+					+ "③ 사용자 산업(userIndustry) 대상 2차 벡터 검색까지 수행하고 세 결과를 모두 반환한다.")
 	@GetMapping("/api/wiki/search")
 	public ResponseEntity<AnalogySearchResult> search(
-			@RequestParam @NotBlank(message = "query는 비어 있을 수 없습니다.") String query,
+			@Parameter(description = "검색할 용어/질의어") @RequestParam @NotBlank(message = "query는 비어 있을 수 없습니다.") String query,
 			// userIndustry는 채팅 시작 시 설정한 사용자 페르소나에서 옴 — 항상 필수.
+			@Parameter(description = "비유 근거를 찾을 사용자 자신의 산업(도메인)")
 			@RequestParam @NotBlank(message = "userIndustry는 비어 있을 수 없습니다.")
 			@Pattern(regexp = INDUSTRY_PATTERN, message = INDUSTRY_PATTERN_MESSAGE)
 			String userIndustry
@@ -79,8 +88,9 @@ public class WikiController {
 		return ResponseEntity.ok(analogySearchService.search(query, userIndustry));
 	}
 
+	@Operation(summary = "위키 문서 삭제", description = "위키 문서와 연관된 모든 청크를 벡터 저장소에서 함께 삭제한다. ADMIN 권한 필요.")
 	@DeleteMapping("/api/wiki/admin/{id}")
-	public ResponseEntity<Void> deleteWikiDoc(@PathVariable Long id) {
+	public ResponseEntity<Void> deleteWikiDoc(@Parameter(description = "위키 문서 ID") @PathVariable Long id) {
 		wikiService.delete(id);
 		return ResponseEntity.noContent().build();
 	}

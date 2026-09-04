@@ -47,6 +47,14 @@ spring:
 jwt:
   secret: ${JWT_SECRET:temporary-local-dev-secret-key-change-this-later-1234567890}
 
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
 # wiki 도메인(miniproject_1)에서 가져온 검색 튜닝값. 실데이터로 조정된 값이며 최종은 아님 —
 # 자세한 배경은 wiki-db-setup.sql, WikiService/VectorStoreKeywordSearchRepository 주석 참고.
 wiki:
