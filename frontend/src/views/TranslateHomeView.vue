@@ -105,16 +105,17 @@ async function onLogout() {
  * 그 상태를 그대로 재사용합니다 — 확인은 채팅 진입 시(첫 녹음 시작 시) 1회면 충분합니다.
  */
 function requestStart() {
-  if (!consentGiven.value) {
-    modal.value = 'first-run'
+  if (persona.sessionPersona) {
+    stt.start()
     return
   }
-  modal.value = 'lens'
+  modal.value = consentGiven.value ? 'lens' : 'first-run'
 }
 
 function onConsent() {
   stt.grantConsent()
-  modal.value = 'lens'
+  modal.value = null
+  stt.start()
 }
 
 function onLensConfirm() {
