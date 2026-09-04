@@ -1,0 +1,203 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// 광주_2반_6조_peritago — DB 설계 (DBML)
+//
+// 하나의 기능 흐름: "용어 질의 → 3단계 근거 폴백(Glossary→위키→일반 지식) → 2파트 응답"
+//   users(누가) → chat_sessions(어느 채팅에서) → query(무엇을 물었고)
+//   → ai_response(AI가 어떻게 답했나) + glossaries/vector_store(근거)
+//   + user_persona/domain_tags(어떤 눈높이로)
+//
+// 명명 규칙: snake_case. 컬럼명은 API.yml 응답 필드와 1:1 대응
+//   (official_definition ↔ officialDefinition, personalized_explanation ↔ personalizedExplanation)
+// 정규화 메모:
+//   - 도메인 태그는 반복 데이터라 별도 테이블(domain_tags)로 분리하고
+//     사용자와 M:N 관계를 중간 테이블(user_domain_tags)로 푼다 (1NF~3NF).
+//   - 질의(query)와 응답(ai_response)을 분리한 이유: 질의는 사용자 행위,
+//     응답은 AI 산출물로 생명주기가 다르며, LLM 실패 시 응답 없는 질의를 남기지 않도록
+//     트랜잭션 경계를 명확히 하기 위함 (1:1, query_id UNIQUE).
+// dbdiagram.io 에 붙여 넣으면 ERD가 그려진다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Project peritago {
+  database_type: 'PostgreSQL'
+  Note: '''
+    사내 도메인 용어·은어 실시간 통역 서비스 peritago
+
+    RDB 외 저장소 (Redis 7 — 스키마 없는 보조 저장소):
+    - context:{sessionId} : LIST, 대화 맥락 슬라이딩 윈도우 최근 5문장, TTL 1시간 (REQ-F-010)
+    - translate:{sha256}  : STRING, 맥락 없는 질의의 2파트 응답 캐시, TTL 1시간 (REQ-F-014)
+      키에 용어+프롬프트 버전+페르소나 서술+분량이 포함되어 눈높이가 다르면 캐시를 공유하지 않는다
+    - refresh:{userId} / blacklist:{token} : JWT 세션 관리 (REQ-F-001)
+
+    PostgreSQL 확장: pgvector(임베딩 검색) + pg_bigm(한국어 키워드 2-gram 검색) — REQ-F-012
+  '''
+}
+
+// ── ENUM 정의 ────────────────────────────────────────────────────────────────
+
+Enum user_role {
+  USER  [note: '일반 사용자']
+  ADMIN [note: '은어 사전·위키 관리자 (REQ-F-009, 012)']
+}
+
+Enum explanation_length {
+  SHORT    [note: '1문장']
+  MEDIUM   [note: '2~3문장 (기본값)']
+  DETAILED [note: '4~6문장']
+}
+
+Enum source_type {
+  GLOSSARY [note: '폴백 1단계 — 은어 사전 Exact Match (REQ-F-005)']
+  WIKI     [note: '폴백 2단계 — 사내 위키 RAG 근거 (REQ-F-013)']
+  GENERAL  [note: '폴백 3단계 — 사내 근거 없음, 화면에 "사내 기준 아님" 고지 (REQ-F-007)']
+}
+
+// ── 회원·페르소나 (REQ-F-001, 002) ──────────────────────────────────────────
+
+Table users {
+  id         bigint    [pk, increment]
+  email      varchar(255) [not null, unique, note: '로그인 ID']
+  password   varchar(255) [not null, note: 'BCrypt 해시']
+  name       varchar(255) [not null]
+  role       user_role [not null, default: 'USER']
+  created_at timestamp [not null]
+  updated_at timestamp
+
+  Note: '사용자 계정. 모든 자원(세션·질의·응답)의 소유 주체 (REQ-F-001)'
+}
+
+Table user_persona {
+  id                      bigint    [pk, increment]
+  user_id                 bigint    [not null, unique, ref: - users.id, note: 'UNIQUE → 사용자당 1개 (1:1)']
+  persona_description     text      [note: '자유 배경 서술 — 개인화 설명·캐시 키에 반영']
+  official_def_length     explanation_length [note: '공식 정의 분량']
+  personalized_exp_length explanation_length [note: '개인화 설명 분량']
+  created_at              timestamp [not null]
+  updated_at              timestamp
+
+  Note: '눈높이 정보 (REQ-F-002). users와 분리한 이유: 페르소나는 선택 정보(첫 채팅 전 미설정 가능)라 NULL 컬럼을 users에 늘어놓지 않는다'
+}
+
+Table domain_tags {
+  id   bigint       [pk, increment]
+  name varchar(255) [not null, unique, note: '개발/기획/디자인/영업/경영/기타 (시드 데이터)']
+
+  Note: '정규화: 태그 문자열 반복 저장 대신 별도 테이블로 분리 (REQ-F-002)'
+}
+
+Table user_domain_tags {
+  id            bigint [pk, increment]
+  user_id       bigint [not null, ref: > users.id]
+  domain_tag_id bigint [not null, ref: > domain_tags.id]
+
+  indexes {
+    (user_id, domain_tag_id) [unique]
+  }
+
+  Note: 'users ↔ domain_tags M:N 중간 테이블 — 한 사용자가 여러 도메인, 한 도메인에 여러 사용자'
+}
+
+// ── 지식베이스: 은어 사전·위키 (REQ-F-005, 009, 012) ────────────────────────
+
+Table glossaries {
+  id                  bigint      [pk, increment]
+  term                varchar(50) [not null, unique, note: 'Exact Match 대상 — 유일해야 함']
+  official_definition text        [not null, note: '관리자 확정 공식 정의']
+  created_by          bigint      [not null, ref: > users.id, note: '등록한 관리자 (논리 참조 — 코드에서는 Long id 보관)']
+  created_at          timestamp   [not null]
+  updated_at          timestamp
+
+  Note: '사내 은어 사전 (REQ-F-009). 폴백 1단계 근거이자 은어 자동 감지(REQ-F-011)의 대조 사전'
+}
+
+Table wiki_documents {
+  id         bigint       [pk, increment]
+  title      varchar(200) [not null]
+  industry   varchar(50)  [not null, note: '산업 분류(개발/영업 등) — 교차 도메인 비유 2차 검색 필터 (REQ-F-013)']
+  source_url text         [note: '출처 링크 — ai_response.source_ref로 노출']
+  created_at timestamp    [not null]
+
+  Note: '위키 문서 메타데이터 (REQ-F-012). 본문 청크·임베딩은 vector_store가 담당 — 메타와 검색 데이터의 관심사 분리'
+}
+
+Table vector_store {
+  id        uuid  [pk, note: 'Spring AI PgVectorStore가 관리']
+  content   text  [not null, note: '청크 본문 — pg_bigm GIN 인덱스로 한국어 키워드 검색']
+  metadata  jsonb [note: 'documentId(→ wiki_documents.id 논리 참조), title, industry, sourceUrl']
+  embedding  vector [note: 'pgvector vector(1536) — text-embedding-3-small 임베딩, 코사인 유사도 검색']
+
+  indexes {
+    content [name: 'vector_store_content_bigm_idx']
+  }
+
+  Note: '''위키 청크 저장소 (REQ-F-012, 013). 스키마는 Spring AI가 생성·관리하며
+  wiki_documents와는 metadata.documentId로 논리 연결(물리 FK 없음 — 삭제 시 서비스 계층이 함께 정리).
+  content 인덱스는 GIN(gin_bigm_ops) — Hybrid 검색의 한국어 키워드 절반. embedding은 vector(1536)'''
+}
+
+// ── 번역 핵심: 세션 → 질의 → 응답 (REQ-F-003, 004, 006~008, 014) ───────────
+
+Table chat_sessions {
+  id         bigint       [pk, increment]
+  user_id    bigint       [not null, ref: > users.id, note: '한 사용자가 여러 세션 (1:N)']
+  title      varchar(100) [note: 'NULL 허용 — 첫 질의의 term으로 자동 지정, 이후 수정 가능']
+  created_at timestamp    [not null]
+  updated_at timestamp    [not null, note: '마지막 질의 발생 시각 — 목록 최근 대화순 정렬 기준']
+
+  indexes {
+    (user_id, updated_at) [name: 'idx_chat_sessions_user_updated']
+  }
+
+  Note: '"새 채팅" 1건 (REQ-F-003). 대화 맥락(Redis context:{sessionId})의 격리 단위'
+}
+
+Table query {
+  id               bigint       [pk, increment]
+  user_id          bigint       [not null, ref: > users.id, note: '이력 조회(REQ-F-008)의 소유자 필터']
+  session_id       bigint       [not null, ref: > chat_sessions.id, note: '모든 질의는 하나의 세션에 속함 (1:N)']
+  term             varchar(100) [not null, note: '질의 용어 (1~100자)']
+  context_snapshot text         [note: '질의 시점 맥락(최근 5문장). 맥락 없으면 NULL — 캐시 대상 판별 기준 (REQ-F-014)']
+  created_at       timestamp    [not null]
+
+  indexes {
+    (user_id, created_at) [name: 'idx_query_user_created']
+  }
+
+  Note: '질의 이력 (REQ-F-004). 불변 레코드라 updated_at 없음'
+}
+
+Table ai_response {
+  id                       bigint      [pk, increment]
+  query_id                 bigint      [not null, unique, ref: - query.id, note: 'UNIQUE → 질의당 응답 1건 (1:1). LLM 실패 시 질의와 함께 롤백해 불변식 유지 (REQ-F-014)']
+  official_definition      text        [not null, note: '📖 카드 상단 — GENERAL이면 필수 고지 문구로 시작 (REQ-F-007)']
+  personalized_explanation text        [not null, note: '💡 카드 하단 — 페르소나 눈높이 설명 (REQ-F-006)']
+  source_type              source_type [not null, note: '폴백 결과 (CHECK 제약 자동 생성)']
+  source_ref               varchar(255) [note: 'GLOSSARY=glossaries.id, WIKI=출처 링크, GENERAL=NULL (다형 참조라 물리 FK 없음)']
+  model                    varchar(50) [note: '관측성 — 사용 모델 (Mock 단계 NULL)']
+  prompt_version           varchar(20) [note: '관측성 — 프롬프트 버전(v1/v2/v3), 캐시 무효화·품질 추적']
+  token_usage              int         [note: '관측성 — 호출당 토큰 수 (비용 모니터링, 캐시 적중 시 0)']
+  latency_ms               int         [note: '관측성 — LLM 응답 소요 시간(ms)']
+  created_at               timestamp   [not null]
+
+  Note: 'AI 2파트 응답 (REQ-F-006, 007). 흐름의 최종 산출물이자 관측성 데이터의 적재처 — "좋아 보인다"가 아니라 수치로 판단하기 위한 컬럼 4종 포함'
+}
+
+// ── 테이블 그룹 (ERD 가독성) ────────────────────────────────────────────────
+
+TableGroup member_persona {
+  users
+  user_persona
+  domain_tags
+  user_domain_tags
+}
+
+TableGroup knowledge_base {
+  glossaries
+  wiki_documents
+  vector_store
+}
+
+TableGroup translate_core_flow {
+  chat_sessions
+  query
+  ai_response
+}
