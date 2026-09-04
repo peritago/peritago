@@ -26,7 +26,7 @@ public class OpenApiConfig {
     public OpenAPI openApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("DomainBridge API")
+                        .title("Peritago API")
                         .description("사내 용어 통역 서비스 API 문서. "
                                 + "인증이 필요한 API는 우측 상단 Authorize 버튼에 로그인으로 발급받은 "
                                 + "액세스 토큰을 입력하면 된다 (Bearer 접두사 없이 토큰 값만 입력).")
