@@ -27,6 +27,15 @@ function commitEdit(chat) {
   if (next && next !== chat.title) emit('rename', chat.id, next)
 }
 
+/**
+ * 한글 등 조합형 입력 중 마지막 글자를 조합 확정하는 Enter까지 그대로 커밋해버리면
+ * 그 글자가 반영되기 전에 잘립니다. event.isComposing이면 그 Enter는 무시합니다.
+ */
+function commitEditOnEnter(event, chat) {
+  if (event.isComposing) return
+  commitEdit(chat)
+}
+
 function cancelEdit() {
   editingId.value = null
 }
@@ -66,7 +75,7 @@ function cancelEdit() {
                   maxlength="100"
                   aria-label="채팅 제목"
                   @click.stop
-                  @keydown.enter.stop="commitEdit(chat)"
+                  @keydown.enter.stop="commitEditOnEnter($event, chat)"
                   @keydown.esc.stop="cancelEdit"
                   @blur="commitEdit(chat)"
                 />
