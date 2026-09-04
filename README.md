@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/logo.png" width="160" alt="peritago logo">
+  <img src="docs/screenshots/logo.gif" width="160" alt="peritago logo">
 </p>
 
 # peritago (페리타고)
