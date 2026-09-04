@@ -69,13 +69,18 @@ async function askAgain(term) {
             <h1>나의 용어집</h1>
             <span class="u-meta">{{ glossaryTerms.length }}개 용어</span>
           </div>
-          <input
-            v-model="query"
-            type="search"
-            class="input myg__search"
-            placeholder="용어로 찾기"
-            aria-label="용어로 찾기"
-          />
+          <div class="myg__actions">
+            <button type="button" class="btn btn--ghost" @click="router.push('/')">
+              번역 홈으로 가기
+            </button>
+            <input
+              v-model="query"
+              type="search"
+              class="input myg__search"
+              placeholder="용어로 찾기"
+              aria-label="용어로 찾기"
+            />
+          </div>
         </header>
 
         <p class="myg__lead">
@@ -138,6 +143,13 @@ async function askAgain(term) {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
+}
+
+.myg__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 

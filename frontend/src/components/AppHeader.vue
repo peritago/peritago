@@ -1,4 +1,6 @@
 <script setup>
+import { useRouter } from 'vue-router'
+
 defineProps({
   userName: { type: String, default: '' },
   initial: { type: String, default: '' },
@@ -8,16 +10,22 @@ defineProps({
 })
 
 defineEmits(['open-lens', 'open-my-glossary', 'open-glossary', 'logout'])
+
+const router = useRouter()
+
+function goHome() {
+  router.push({ name: 'home' })
+}
 </script>
 
 <template>
   <header class="head">
-    <router-link to="/" class="head__brand">
+    <button type="button" class="head__brand" @click="goHome">
       <img src="/assets/peritago-parrot.png" alt="" width="32" height="32" />
       <span class="head__name">PERITAGO</span>
       <span class="head__rule" aria-hidden="true"></span>
       <span class="head__tagline">도메인 용어 &amp; 은어 실시간 번역기</span>
-    </router-link>
+    </button>
 
     <div class="head__right">
       <!-- 지금 어떤 렌즈로 듣고 있는지는 항상 헤더에서 읽힙니다 (UC-16). -->
@@ -73,8 +81,12 @@ defineEmits(['open-lens', 'open-my-glossary', 'open-glossary', 'logout'])
   align-items: center;
   gap: 12px;
   min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: inherit;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .head__brand img {
