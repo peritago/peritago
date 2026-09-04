@@ -7,11 +7,15 @@ import com.skala.domainbridge.wiki.service.AnalogySearchService;
 import com.skala.domainbridge.wiki.service.WikiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -38,6 +42,15 @@ public class WikiEvidenceFinder {
     /** 프롬프트에 넣을 비유 후보 상한. 실측상 청크가 약 300토큰이라 3개까지는 부담이 없다. */
     private static final int MAX_ANALOGIES = 3;
 
+    /**
+     * true(기본, 미설정 포함)면 아래 {@link #findMock}의 고정 데이터를 쓰고 VectorStore/ChatClient를
+     * 전혀 호출하지 않는다 — OPENAI_API_KEY 없이 "위키에서 찾아 타 도메인으로 비유" 흐름을 그대로
+     * 데모할 수 있게 하기 위한 스위치다. false면 실제 임베딩 검색 + HyDE 요약을 탄다.
+     * (.env.example의 peritago.translate.mock.wiki 참고)
+     */
+    @Value("${peritago.translate.mock.wiki:true}")
+    private boolean mockWiki;
+
     private final AnalogySearchService analogySearchService;
     private final WikiService wikiService;
 
@@ -47,11 +60,65 @@ public class WikiEvidenceFinder {
      *                    다시 올라와 "MSA 를 MSA 로 설명하는" 순환이 된다.
      */
     public Optional<WikiEvidence> find(String term, List<String> userDomains) {
+        if (mockWiki) {
+            return findMock(term, userDomains);
+        }
         if (userDomains == null || userDomains.isEmpty()) {
             return findWithoutAnalogy(term);
         }
         return findWithAnalogy(term, userDomains);
     }
+
+    /**
+     * 고정 데모 데이터셋. 등록된 용어면 근거를 돌려주고, 사용자 도메인에 맞는 비유가 준비돼 있으면
+     * 같이 채워준다 — 실구현의 "닮은 게 없으면 억지로 만들지 않는다" 원칙을 그대로 따른다(그 태그의
+     * 비유가 없으면 그냥 빈 리스트).
+     */
+    private Optional<WikiEvidence> findMock(String term, List<String> userDomains) {
+        MockWikiDoc doc = MOCK_DOCS.get(normalizeForMock(term));
+        if (doc == null) {
+            return Optional.empty();
+        }
+        List<AnalogyCandidate> analogies = (userDomains == null ? List.<String>of() : userDomains).stream()
+                .map(doc.analogiesByDomain()::get)
+                .filter(Objects::nonNull)
+                .limit(MAX_ANALOGIES)
+                .toList();
+        return Optional.of(new WikiEvidence(doc.officialSource(), doc.officialSourceUrl(), false, analogies));
+    }
+
+    private static String normalizeForMock(String term) {
+        return term == null ? "" : term.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private record MockWikiDoc(
+            String officialSource,
+            String officialSourceUrl,
+            Map<String, AnalogyCandidate> analogiesByDomain
+    ) {}
+
+    /**
+     * 데모용 고정 데이터. 새 용어를 추가하고 싶으면 여기에 항목만 추가하면 된다
+     * (term은 대소문자 무시하고 매칭됨).
+     */
+    private static final Map<String, MockWikiDoc> MOCK_DOCS = Map.of(
+            "MSA", new MockWikiDoc(
+                    "MSA(Microservice Architecture)는 하나의 애플리케이션을 독립적으로 배포 가능한 "
+                            + "여러 개의 작은 서비스로 나누어 구성하는 아키텍처 스타일이다. 각 서비스는 자체 "
+                            + "데이터 저장소를 가지며 API(REST/gRPC 등)로 서로 통신한다. 서비스 단위로 독립적인 "
+                            + "배포·확장·장애 격리가 가능하다는 장점이 있는 반면, 서비스 간 데이터 정합성 관리와 "
+                            + "운영 복잡도가 커진다는 단점이 있다.",
+                    "wiki://architecture-guide/msa",
+                    Map.of("반도체", new AnalogyCandidate(
+                            "반도체",
+                            "반도체 팹(Fab)은 전체 공정을 감광(포토)·식각·증착·세정 등 여러 개의 독립된 "
+                                    + "공정 모듈로 나누고, 모듈마다 전담 장비가 따로 있다. 모듈 간에는 웨이퍼 "
+                                    + "캐리어(FOUP)라는 표준 규격 용기로 웨이퍼를 주고받으며, 특정 모듈만 "
+                                    + "따로 업그레이드하거나 증설해도 다른 모듈에는 영향이 없다. 전체 공정 "
+                                    + "순서와 상태는 MES(제조실행시스템)가 중앙에서 조율한다.",
+                            0.87))
+            )
+    );
 
     /**
      * 페르소나가 없으면 비유를 만들 기준이 없다. 1차 검색만 하고 끝낸다 -
