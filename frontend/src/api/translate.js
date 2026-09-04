@@ -25,7 +25,16 @@ export async function streamTranslation({ sessionId, term }, handlers, { signal 
   await emit(response.officialDefinition, handlers.onOfficial, signal)
   await emit(response.personalizedExplanation, handlers.onPersonalized, signal)
 
-  handlers.onDone?.({ queryId: response.queryId })
+  handlers.onDone?.({
+    queryId: response.queryId,
+    sessionId: response.sessionId,
+    term: response.term,
+    sourceType: response.sourceType,
+    officialDefinition: response.officialDefinition,
+    personalizedExplanation: response.personalizedExplanation,
+    outsideCompanyStandard: response.outsideCompanyStandard,
+    createdAt: response.createdAt,
+  })
 }
 
 async function emit(text, fn, signal) {

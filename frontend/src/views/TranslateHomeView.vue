@@ -1,7 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePersonaStore } from '@/stores/persona'
 import { useChatStore } from '@/stores/chat'
@@ -18,16 +18,25 @@ import ResultRow from '@/components/ResultRow.vue'
 import SessionLensModal from '@/components/SessionLensModal.vue'
 import FirstRunConsentModal from '@/components/FirstRunConsentModal.vue'
 
+const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const persona = usePersonaStore()
 const chat = useChatStore()
 const stt = useSttStore()
 
-const { user, initial } = storeToRefs(auth)
+const { user, initial, isAdmin } = storeToRefs(auth)
 const { activeLabel, activePersona } = storeToRefs(persona)
-const { chats, currentChatId, stack, expandedId, queryCount, submitError, isStreaming } =
-  storeToRefs(chat)
+const {
+  chats,
+  sessionsLoaded,
+  currentChatId,
+  stack,
+  expandedId,
+  queryCount,
+  submitError,
+  isStreaming,
+} = storeToRefs(chat)
 const { candidates, isRecording, consentGiven, sessionNumber } = storeToRefs(stt)
 
 /** STT 콘솔 접기 — 접혀도 레일에 녹음 상태가 남습니다. */
@@ -47,13 +56,44 @@ const composer = ref(null)
 
 const personaLabel = computed(() => activePersona.value.domains.slice(0, 2).join(' / '))
 
-onMounted(() => {
-  chat.init()
+/**
+ * 세션 라우팅 — 채팅을 바꿀 때마다(사이드바 선택·새 채팅) URL을 /chat/:id로 맞춰둡니다.
+ * 그래야 새로고침·뒤로가기·링크 공유로 같은 채팅을 다시 열 수 있습니다. history를 채팅
+ * 전환마다 쌓지 않으려고 push 대신 replace를 씁니다.
+ *
+ * onMounted에서도 한 번 직접 불러줘야 합니다 — 로그인 직후엔 LoginView가 이미
+ * chat.createChat()으로 currentChatId를 정해둔 채로 이 컴포넌트가 마운트되는데, 그러면
+ * chat.init()이 같은 값을 다시 선택해도 ref 값이 안 바뀌어 watch 콜백이 아예 안 돕니다.
+ */
+function syncRouteToChatId(id) {
+  if (id == null) return
+  if (Number(route.params.id) !== id) router.replace({ name: 'chat', params: { id } })
+}
+
+watch(currentChatId, syncRouteToChatId)
+
+onMounted(async () => {
+  const initialId = route.params.id ? Number(route.params.id) : null
+  await chat.init(initialId)
+  syncRouteToChatId(currentChatId.value)
   persona.loadDomainTags()
 })
 
+/** URL이 바뀌었는데(뒤로가기 등) 아직 그 채팅이 아니면 맞춰서 선택합니다. */
+watch(
+  () => route.params.id,
+  (id) => {
+    if (!sessionsLoaded.value) return // 초기 선택은 onMounted → chat.init()이 담당
+    const chatId = id ? Number(id) : null
+    if (chatId && chatId !== currentChatId.value && chats.value.some((c) => c.id === chatId)) {
+      chat.selectChat(chatId)
+    }
+  },
+)
+
 async function onLogout() {
   if (stt.isRecording) stt.stop()
+  chat.clearCurrentContext()
   await auth.logout()
   persona.reset()
   router.push('/login')
@@ -110,6 +150,11 @@ async function onNewChat() {
   await chat.createChat()
   composer.value?.focus()
 }
+
+/** 실패하면 chat.renameChat이 이미 제목을 되돌려 두므로, 여기선 콘솔에만 남깁니다. */
+function onRenameChat(id, title) {
+  chat.renameChat(id, title).catch((err) => console.warn('채팅 제목 변경 실패', err))
+}
 </script>
 
 <template>
@@ -119,8 +164,9 @@ async function onNewChat() {
       :initial="initial"
       :lens-label="activeLabel"
       :lens-scope="activePersona.scope"
+      :is-admin="isAdmin"
       @open-lens="modal = 'lens'"
-      @open-history="router.push('/history')"
+      @open-my-glossary="router.push('/my-glossary')"
       @open-glossary="router.push('/glossary')"
       @logout="onLogout"
     />
@@ -139,6 +185,7 @@ async function onNewChat() {
         :recording-chat-id="isRecording ? currentChatId : null"
         @create="onNewChat"
         @select="chat.selectChat"
+        @rename="onRenameChat"
       />
 
       <main class="desk">
@@ -148,7 +195,7 @@ async function onNewChat() {
               <h1>이 채팅의 질의</h1>
               <span class="u-meta">{{ queryCount }}건</span>
             </div>
-            <router-link to="/history" class="desk__all">전체 이력 보기</router-link>
+            <router-link to="/my-glossary" class="desk__all">나의 용어집</router-link>
           </div>
 
           <div class="desk__stack">

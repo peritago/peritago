@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { api, tokens, ApiError, onAuthExpired } from '@/api/http'
+import { api, tokens, ApiError, onAuthExpired, decodeTokenRole } from '@/api/http'
 
 /**
  * UC-01. 실제 백엔드 연결.
@@ -15,13 +15,17 @@ export const useAuthStore = defineStore('auth', () => {
   const ready = ref(false)
   const error = ref('')
   const busy = ref(false)
+  /** 액세스 토큰의 role 클레임 — 관리자 메뉴 노출 등 화면 표시용입니다. */
+  const role = ref(null)
 
   const hasToken = computed(() => Boolean(tokens.access))
   const isAuthenticated = computed(() => Boolean(user.value))
+  const isAdmin = computed(() => role.value === 'ADMIN')
   const initial = computed(() => user.value?.name?.slice(-1) ?? '')
 
   onAuthExpired(() => {
     user.value = null
+    role.value = null
     ready.value = true
   })
 
@@ -34,9 +38,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
     try {
       user.value = await api.get('/api/users/me')
+      role.value = decodeTokenRole(tokens.access)
     } catch {
       tokens.clear()
       user.value = null
+      role.value = null
     } finally {
       ready.value = true
     }
@@ -49,6 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const token = await api.post('/api/auth/login', { email, password }, { auth: false })
       tokens.set(token)
+      role.value = decodeTokenRole(token.accessToken)
       user.value = await api.get('/api/users/me')
       ready.value = true
       return user.value
@@ -83,6 +90,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
     tokens.clear()
     user.value = null
+    role.value = null
   }
 
   return {
@@ -92,6 +100,7 @@ export const useAuthStore = defineStore('auth', () => {
     busy,
     hasToken,
     isAuthenticated,
+    isAdmin,
     initial,
     restore,
     login,

@@ -4,9 +4,10 @@ defineProps({
   initial: { type: String, default: '' },
   lensLabel: { type: String, default: '' },
   lensScope: { type: String, default: 'user' },
+  isAdmin: { type: Boolean, default: false },
 })
 
-defineEmits(['open-lens', 'open-history', 'open-glossary', 'logout'])
+defineEmits(['open-lens', 'open-my-glossary', 'open-glossary', 'logout'])
 </script>
 
 <template>
@@ -32,8 +33,16 @@ defineEmits(['open-lens', 'open-history', 'open-glossary', 'logout'])
         <i class="ti ti-adjustments-horizontal" aria-hidden="true"></i>
       </button>
 
-      <button type="button" class="head__link" @click="$emit('open-history')">질의 이력</button>
-      <button type="button" class="head__link" @click="$emit('open-glossary')">용어집</button>
+      <button type="button" class="head__link" @click="$emit('open-my-glossary')">나의 용어집</button>
+      <!-- /api/glossary/admin이 ADMIN 전용이라, 일반 사용자에겐 아예 보이지 않게 합니다. -->
+      <button
+        v-if="isAdmin"
+        type="button"
+        class="head__link"
+        @click="$emit('open-glossary')"
+      >
+        용어집
+      </button>
 
       <div class="head__user">
         <span class="head__avatar" aria-hidden="true">{{ initial }}</span>

@@ -22,6 +22,17 @@ function submit() {
   term.value = ''
 }
 
+/**
+ * 한글 등 조합형 입력 중에 Enter를 누르면(마지막 글자를 조합 확정하는 Enter) keydown이
+ * 그 글자가 term에 반영되기 전에 먼저 도착해서, 그대로 제출하면 마지막 글자가 잘립니다.
+ * event.isComposing이면 IME 확정용 Enter이니 제출하지 않고 넘깁니다.
+ */
+function onEnterKeydown(event) {
+  if (event.isComposing) return
+  event.preventDefault()
+  submit()
+}
+
 function focus() {
   input.value?.focus()
 }
@@ -62,7 +73,7 @@ defineExpose({ focus })
           autocomplete="off"
           :aria-describedby="error ? 'term-error' : 'term-help'"
           :aria-invalid="Boolean(error)"
-          @keydown.enter.prevent="submit"
+          @keydown.enter="onEnterKeydown"
         />
         <span class="composer__count">{{ term.length }} / {{ maxLength }}</span>
       </div>

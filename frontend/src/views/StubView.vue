@@ -14,7 +14,7 @@ defineProps({
 const router = useRouter()
 const auth = useAuthStore()
 const persona = usePersonaStore()
-const { user, initial } = storeToRefs(auth)
+const { user, initial, isAdmin } = storeToRefs(auth)
 const { activeLabel, activePersona } = storeToRefs(persona)
 </script>
 
@@ -25,7 +25,8 @@ const { activeLabel, activePersona } = storeToRefs(persona)
       :initial="initial"
       :lens-label="activeLabel"
       :lens-scope="activePersona.scope"
-      @open-history="router.push('/history')"
+      :is-admin="isAdmin"
+      @open-my-glossary="router.push('/my-glossary')"
       @open-glossary="router.push('/glossary')"
     />
 

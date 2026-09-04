@@ -52,6 +52,22 @@ export const tokens = {
   },
 }
 
+/**
+ * 액세스 토큰의 role 클레임을 읽습니다 (JwtTokenProvider.createAccessToken 참고).
+ * 서명 검증은 하지 않습니다 — 실제 권한 판단은 항상 서버(SecurityConfig)가 하고,
+ * 여기서는 "관리자 메뉴를 보여줄지" 같은 화면 표시용으로만 씁니다.
+ */
+export function decodeTokenRole(token) {
+  if (!token) return null
+  try {
+    const payload = token.split('.')[1]
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(base64))?.role ?? null
+  } catch {
+    return null
+  }
+}
+
 /** 토큰이 완전히 죽었을 때 앱에 알립니다. auth 스토어가 구독해 로그인으로 보냅니다. */
 const listeners = new Set()
 export function onAuthExpired(fn) {
@@ -144,4 +160,5 @@ export const api = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body }),
   put: (path, body, options) => request(path, { ...options, method: 'PUT', body }),
+  delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
 }

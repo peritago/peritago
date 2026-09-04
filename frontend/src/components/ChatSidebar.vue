@@ -1,11 +1,44 @@
 <script setup>
+import { nextTick, ref } from 'vue'
+
 defineProps({
   chats: { type: Array, default: () => [] },
   currentId: { type: [Number, String], default: null },
   recordingChatId: { type: [Number, String], default: null },
 })
 
-defineEmits(['create', 'select'])
+const emit = defineEmits(['create', 'select', 'rename'])
+
+/** 인라인 제목 편집 — 한 번에 하나만 편집 가능하므로 단일 상태로 충분합니다. */
+const editingId = ref(null)
+const draftTitle = ref('')
+const renameInput = ref(null)
+
+function startEdit(chat) {
+  editingId.value = chat.id
+  draftTitle.value = chat.title
+  nextTick(() => renameInput.value?.focus())
+}
+
+function commitEdit(chat) {
+  if (editingId.value !== chat.id) return
+  editingId.value = null
+  const next = draftTitle.value.trim()
+  if (next && next !== chat.title) emit('rename', chat.id, next)
+}
+
+/**
+ * 한글 등 조합형 입력 중 마지막 글자를 조합 확정하는 Enter까지 그대로 커밋해버리면
+ * 그 글자가 반영되기 전에 잘립니다. event.isComposing이면 그 Enter는 무시합니다.
+ */
+function commitEditOnEnter(event, chat) {
+  if (event.isComposing) return
+  commitEdit(chat)
+}
+
+function cancelEdit() {
+  editingId.value = null
+}
 </script>
 
 <template>
@@ -19,24 +52,53 @@ defineEmits(['create', 'select'])
 
       <ul class="side__list">
         <li v-for="chat in chats" :key="chat.id">
-          <button
-            type="button"
+          <div
             class="item"
             :class="{ 'item--active': chat.id === currentId }"
             :aria-current="chat.id === currentId ? 'true' : undefined"
-            @click="$emit('select', chat.id)"
+            role="button"
+            tabindex="0"
+            @click="editingId !== chat.id && $emit('select', chat.id)"
+            @keydown.enter="editingId !== chat.id && $emit('select', chat.id)"
           >
             <span v-if="chat.id === currentId" class="item__rule" aria-hidden="true"></span>
             <span class="item__body">
               <span class="item__when">{{ chat.no }} · {{ chat.when }}</span>
-              <span class="item__title">{{ chat.title }}</span>
+
+              <span class="item__title-row">
+                <input
+                  v-if="editingId === chat.id"
+                  ref="renameInput"
+                  v-model="draftTitle"
+                  type="text"
+                  class="item__title-input"
+                  maxlength="100"
+                  aria-label="채팅 제목"
+                  @click.stop
+                  @keydown.enter.stop="commitEditOnEnter($event, chat)"
+                  @keydown.esc.stop="cancelEdit"
+                  @blur="commitEdit(chat)"
+                />
+                <template v-else>
+                  <span class="item__title">{{ chat.title }}</span>
+                  <button
+                    type="button"
+                    class="item__rename"
+                    aria-label="채팅 제목 변경"
+                    @click.stop="startEdit(chat)"
+                  >
+                    <i class="ti ti-pencil" aria-hidden="true"></i>
+                  </button>
+                </template>
+              </span>
+
               <span class="item__meta">
                 질의 {{ chat.count }}건<template v-if="chat.id === recordingChatId">
                   · 녹음 중</template
                 >
               </span>
             </span>
-          </button>
+          </div>
         </li>
       </ul>
     </div>
@@ -88,6 +150,7 @@ defineEmits(['create', 'select'])
   border-radius: var(--r-control);
   color: var(--c-text-muted);
   overflow: hidden;
+  cursor: pointer;
   transition:
     background-color var(--t-fast),
     border-color var(--t-fast),
@@ -125,7 +188,15 @@ defineEmits(['create', 'select'])
   font-size: 14px;
 }
 
+.item__title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 .item__title {
+  flex: 1;
   font-weight: 600;
   font-size: 14px;
   line-height: 1.4;
@@ -133,6 +204,43 @@ defineEmits(['create', 'select'])
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.item__rename {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--c-text-muted);
+  opacity: 0;
+  transition:
+    opacity var(--t-fast),
+    color var(--t-fast);
+}
+
+.item:hover .item__rename,
+.item__rename:focus-visible {
+  opacity: 1;
+}
+
+.item__rename:hover {
+  color: var(--c-accent);
+}
+
+.item__title-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--c-text);
+  background: var(--c-bg);
+  border: 1px solid var(--c-accent);
+  border-radius: 4px;
 }
 
 .item__meta {
